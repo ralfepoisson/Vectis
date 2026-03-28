@@ -1,0 +1,50 @@
+@startuml
+title Vectis MVP ERD
+
+skinparam shadowing false
+hide circle
+skinparam linetype ortho
+
+entity "camera_sources" as camera_sources {
+  *id : uuid
+  --
+  name : varchar
+  location : varchar
+  status : varchar
+  fps : integer
+}
+
+entity "vision_events" as vision_events {
+  *id : uuid
+  --
+  camera_source_id : uuid
+  event_type : varchar
+  severity : varchar
+  confidence : decimal
+  summary : text
+  observed_at : timestamptz
+}
+
+entity "automation_rules" as automation_rules {
+  *id : uuid
+  --
+  name : varchar
+  condition_expression : text
+  action_definition : text
+  enabled : boolean
+}
+
+entity "rule_executions" as rule_executions {
+  *id : uuid
+  --
+  automation_rule_id : uuid
+  vision_event_id : uuid
+  status : varchar
+  triggered_at : timestamptz
+}
+
+camera_sources ||--o{ vision_events
+automation_rules ||--o{ rule_executions
+vision_events ||--o{ rule_executions
+
+@enduml

@@ -1,0 +1,35 @@
+@startuml
+title Vectis MVP Package Diagram
+
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam defaultTextAlignment center
+skinparam linetype ortho
+
+package "src" {
+  package "website" as Website
+  package "webapp" as Webapp
+  package "backend" as Backend
+  package "shared" as Shared
+}
+
+database "Future Postgres" as Postgres
+queue "Future Broker" as Broker
+collections "Future Object Store" as ObjectStore
+
+Website ..> Shared : product messaging\nsample content
+Webapp ..> Shared : types and seeded data
+Backend ..> Shared : contracts and sample resources
+
+Webapp --> Backend : REST /api/v1
+Backend ..> Postgres : planned persistence
+Backend ..> Broker : planned event dispatch
+Backend ..> ObjectStore : planned media storage
+
+note bottom of Shared
+Shared currently contains
+TypeScript contracts and
+seeded MVP fixtures.
+end note
+
+@enduml
