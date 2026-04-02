@@ -138,6 +138,14 @@ async function apiRequest<T>(
     return undefined as T;
   }
 
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      "The API expected JSON but received HTML or another format. Check that the webapp is pointing at the backend API."
+    );
+  }
+
   return response.json() as Promise<T>;
 }
 

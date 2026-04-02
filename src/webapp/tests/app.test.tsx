@@ -5,6 +5,15 @@ import { App } from "../src/App";
 
 const fixedNow = new Date("2026-04-02T10:00:00.000Z");
 
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "content-type": "application/json"
+    }
+  });
+}
+
 function createLife2Token(payload: Record<string, unknown>) {
   const header = { alg: "HS256", typ: "JWT" };
   const encode = (value: unknown) =>
@@ -23,7 +32,7 @@ describe("Vectis webapp", () => {
     (window as Window & { __VECTIS_CONFIG__?: unknown }).__VECTIS_CONFIG__ = {
       apiBaseUrl: "https://api.vectis.test/api/v1",
       authServiceSignInUrl: "https://auth.life-sqrd.com/signIn",
-      authServiceApplicationId: "vectis-web",
+      authServiceApplicationId: "0ccc6f76-09c4-4a8c-3bbf-ee097174ffe8",
       appBaseUrl: "http://localhost:4174"
     };
   });
@@ -51,7 +60,7 @@ describe("Vectis webapp", () => {
     const signInLink = screen.getByRole("link", { name: /sign in with life2/i });
     expect(signInLink).toHaveAttribute(
       "href",
-      "https://auth.life-sqrd.com/signIn?applicationId=vectis-web&redirect=http%3A%2F%2Flocalhost%3A4174%2Fauth%2Fcallback"
+      "https://auth.life-sqrd.com/signIn?applicationId=0ccc6f76-09c4-4a8c-3bbf-ee097174ffe8&redirect=http%3A%2F%2Flocalhost%3A4174%2Fauth%2Fcallback"
     );
   });
 
@@ -68,38 +77,35 @@ describe("Vectis webapp", () => {
       const url = String(input);
 
       if (url.endsWith("/premises")) {
-        return new Response(
-          JSON.stringify({
-            items: [
-              {
-                id: "prem-1",
-                tenantId: "tenant-123",
-                name: "North Plant",
-                type: "factory",
-                addressLine1: "12 Industry Way",
-                addressLine2: null,
-                city: "Grenoble",
-                state: null,
-                postalCode: "38000",
-                countryCode: "FR",
-                notes: null,
-                createdByUserId: "user-123",
-                updatedByUserId: null,
-                createdAt: fixedNow.toISOString(),
-                updatedAt: fixedNow.toISOString()
-              }
-            ]
-          }),
-          { status: 200 }
-        );
+        return jsonResponse({
+          items: [
+            {
+              id: "prem-1",
+              tenantId: "tenant-123",
+              name: "North Plant",
+              type: "factory",
+              addressLine1: "12 Industry Way",
+              addressLine2: null,
+              city: "Grenoble",
+              state: null,
+              postalCode: "38000",
+              countryCode: "FR",
+              notes: null,
+              createdByUserId: "user-123",
+              updatedByUserId: null,
+              createdAt: fixedNow.toISOString(),
+              updatedAt: fixedNow.toISOString()
+            }
+          ]
+        });
       }
 
       if (url.endsWith("/agents")) {
-        return new Response(JSON.stringify({ items: [] }), { status: 200 });
+        return jsonResponse({ items: [] });
       }
 
       if (url.endsWith("/premises/prem-1/cameras")) {
-        return new Response(JSON.stringify({ items: [] }), { status: 200 });
+        return jsonResponse({ items: [] });
       }
 
       throw new Error(`Unexpected fetch ${url}`);
@@ -194,18 +200,15 @@ describe("Vectis webapp", () => {
       const method = init?.method ?? "GET";
 
       if (url.endsWith("/premises") && method === "GET") {
-        return new Response(JSON.stringify({ items: premises }), { status: 200 });
+        return jsonResponse({ items: premises });
       }
 
       if (url.endsWith("/agents") && method === "GET") {
-        return new Response(JSON.stringify({ items: agents }), { status: 200 });
+        return jsonResponse({ items: agents });
       }
 
       if (url.endsWith("/premises/prem-1/cameras") && method === "GET") {
-        return new Response(
-          JSON.stringify({ items: camerasByPremises.get("prem-1") ?? [] }),
-          { status: 200 }
-        );
+        return jsonResponse({ items: camerasByPremises.get("prem-1") ?? [] });
       }
 
       if (url.endsWith("/premises") && method === "POST") {
@@ -225,7 +228,7 @@ describe("Vectis webapp", () => {
         };
         premises.push(created);
         camerasByPremises.set("prem-2", []);
-        return new Response(JSON.stringify({ premises: created }), { status: 201 });
+        return jsonResponse({ premises: created }, 201);
       }
 
       if (url.endsWith("/agents") && method === "POST") {
@@ -240,7 +243,7 @@ describe("Vectis webapp", () => {
           ...payload
         };
         agents.push(created);
-        return new Response(JSON.stringify({ agent: created }), { status: 201 });
+        return jsonResponse({ agent: created }, 201);
       }
 
       if (url.endsWith("/premises/prem-1/cameras") && method === "POST") {
@@ -256,13 +259,13 @@ describe("Vectis webapp", () => {
           ...payload
         };
         camerasByPremises.set("prem-1", [...(camerasByPremises.get("prem-1") ?? []), created]);
-        return new Response(JSON.stringify({ camera: created }), { status: 201 });
+        return jsonResponse({ camera: created }, 201);
       }
 
       if (url.endsWith("/agents/agent-1") && method === "PATCH") {
         const payload = JSON.parse(String(init?.body));
         agents[0] = { ...agents[0], ...payload };
-        return new Response(JSON.stringify({ agent: agents[0] }), { status: 200 });
+        return jsonResponse({ agent: agents[0] });
       }
 
       if (url.endsWith("/premises/prem-1/cameras/cam-1") && method === "PATCH") {
@@ -272,7 +275,7 @@ describe("Vectis webapp", () => {
           updated,
           ...((camerasByPremises.get("prem-1") ?? []).slice(1))
         ]);
-        return new Response(JSON.stringify({ camera: updated }), { status: 200 });
+        return jsonResponse({ camera: updated });
       }
 
       if (url.endsWith("/agents/agent-1") && method === "DELETE") {
@@ -374,5 +377,29 @@ describe("Vectis webapp", () => {
 
     fireEvent.click(within(screen.getByTestId("camera-cam-1")).getByRole("button", { name: /remove/i }));
     await waitFor(() => expect(screen.queryByText(/gate cam west/i)).not.toBeInTheDocument());
+  });
+
+  it("shows a helpful error when the API base URL returns html instead of json", async () => {
+    const token = createLife2Token({
+      sub: "user-123",
+      accountId: "tenant-123",
+      exp: Math.floor(new Date("2026-04-09T10:00:00.000Z").getTime() / 1000)
+    });
+
+    localStorage.setItem("vectis.auth.token", token);
+    global.fetch = vi.fn(async () => {
+      return new Response("<!doctype html><html></html>", {
+        status: 200,
+        headers: {
+          "content-type": "text/html"
+        }
+      });
+    }) as typeof global.fetch;
+
+    render(<App />);
+
+    expect(
+      await screen.findByText(/expected json but received html/i)
+    ).toBeInTheDocument();
   });
 });

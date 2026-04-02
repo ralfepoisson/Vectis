@@ -59,7 +59,7 @@ Typical local configuration:
 window.__VECTIS_CONFIG__ = {
   apiBaseUrl: "http://localhost:3000/api/v1",
   authServiceSignInUrl: "https://auth.life-sqrd.com/signIn",
-  authServiceApplicationId: "vectis-web",
+  authServiceApplicationId: "0ccc6f76-09c4-4a8c-3bbf-ee097174ffe8",
   appBaseUrl: "http://localhost:4174"
 };
 ```
@@ -94,7 +94,7 @@ After validation, the backend derives:
 
 For Vectis, the auth-service team should register:
 
-- an `applicationId` for the webapp, for example `vectis-web`
+- the Vectis webapp `applicationId`: `0ccc6f76-09c4-4a8c-3bbf-ee097174ffe8`
 - every allowed local, staging, and production callback URL
 - any production branding metadata needed for the hosted sign-in screen
 
