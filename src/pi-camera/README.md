@@ -23,6 +23,8 @@ rpicam-vid \
   --nopreview \
   --low-latency \
   --inline \
+  --autofocus-mode continuous \
+  --autofocus-range normal \
   --codec libav \
   --libav-format mpegts \
   --width 1920 \
@@ -44,6 +46,20 @@ rpicam-vid \
 - `CAMERA_FRAMERATE`
 - `CAMERA_BITRATE`
 - `CAMERA_LOW_LATENCY`
+- `CAMERA_AUTOFOCUS_MODE`
+- `CAMERA_AUTOFOCUS_RANGE`
+- `CAMERA_LENS_POSITION`
+
+## Focus Notes
+
+The Raspberry Pi Camera Module 3 supports motorized focus. This service now defaults to `continuous` autofocus so the camera actively adjusts focus while streaming.
+
+For fixed installations, you can switch to manual focus and lock a lens position:
+
+```bash
+CAMERA_AUTOFOCUS_MODE=manual
+CAMERA_LENS_POSITION=0.5
+```
 
 ## Local SSH Deployment
 

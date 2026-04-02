@@ -1,5 +1,5 @@
-import { buildApp } from "./app";
-import { readCameraServiceConfig } from "./config";
+import { buildApp } from "./app.js";
+import { readCameraServiceConfig } from "./config.js";
 
 const config = readCameraServiceConfig();
 const app = buildApp({ config });

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough, type Readable } from "node:stream";
 
-import type { CameraServiceConfig } from "./config";
+import type { CameraServiceConfig } from "./config.js";
 
 export interface SpawnedCameraProcess extends EventEmitter {
   stdout: Readable;
@@ -27,6 +27,10 @@ export function buildRpicamCommand(
     "0",
     "--nopreview",
     "--inline",
+    "--autofocus-mode",
+    config.autofocusMode,
+    "--autofocus-range",
+    config.autofocusRange,
     "--codec",
     "libav",
     "--libav-format",
@@ -42,6 +46,10 @@ export function buildRpicamCommand(
     "--output",
     "-"
   ];
+
+  if (config.lensPosition !== null) {
+    args.splice(8, 0, "--lens-position", String(config.lensPosition));
+  }
 
   if (config.useLowLatency) {
     args.splice(4, 0, "--low-latency");

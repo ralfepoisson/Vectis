@@ -64,7 +64,10 @@ describe("Pi camera app", () => {
         codec: "h264",
         width: 1920,
         height: 1080,
-        framerate: 30
+        framerate: 30,
+        autofocusMode: "continuous",
+        autofocusRange: "normal",
+        lensPosition: null
       }
     });
   });

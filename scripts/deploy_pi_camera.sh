@@ -25,6 +25,7 @@ PI_CAMERA_LOW_LATENCY="${PI_CAMERA_LOW_LATENCY:-true}"
 
 REMOTE_ADDRESS="${PI_USER}@${PI_HOST}"
 SSH_OPTIONS="-p ${PI_PORT} -o StrictHostKeyChecking=accept-new"
+SCP_OPTIONS="-P ${PI_PORT} -o StrictHostKeyChecking=accept-new"
 TEMP_DIR="$(mktemp -d)"
 EXPECT_BIN="$(command -v expect || true)"
 PAYLOAD_DIR="${TEMP_DIR}/payload"
@@ -44,7 +45,7 @@ run_with_optional_expect() {
       exit 1
     fi
 
-    EXPECT_PASSWORD="${PI_PASSWORD}" expect <<'EOF' "$@"
+    EXPECT_PASSWORD="${PI_PASSWORD}" expect -f - -- "$@" <<'EOF'
 set timeout -1
 set password $env(EXPECT_PASSWORD)
 set cmd [lindex $argv 0]
@@ -143,8 +144,8 @@ bootstrap_remote_host() {
 sync_payload() {
   echo "Uploading Pi camera files to ${REMOTE_ADDRESS}:${PI_INSTALL_DIR}..."
   run_rsync "${PAYLOAD_DIR}/" "${REMOTE_ADDRESS}:${PI_INSTALL_DIR}/"
-  run_with_optional_expect scp ${SSH_OPTIONS} "${ENV_OUTPUT_PATH}" "${REMOTE_ADDRESS}:${PI_INSTALL_DIR}/${PI_SERVICE_NAME}.env"
-  run_with_optional_expect scp ${SSH_OPTIONS} "${SERVICE_OUTPUT_PATH}" "${REMOTE_ADDRESS}:/tmp/${PI_SERVICE_NAME}.service"
+  run_with_optional_expect scp ${SCP_OPTIONS} "${ENV_OUTPUT_PATH}" "${REMOTE_ADDRESS}:${PI_INSTALL_DIR}/${PI_SERVICE_NAME}.env"
+  run_with_optional_expect scp ${SCP_OPTIONS} "${SERVICE_OUTPUT_PATH}" "${REMOTE_ADDRESS}:/tmp/${PI_SERVICE_NAME}.service"
 }
 
 install_and_restart_service() {
@@ -159,7 +160,15 @@ install_and_restart_service() {
       systemctl daemon-reload
       systemctl enable ${PI_SERVICE_NAME}
       systemctl restart ${PI_SERVICE_NAME}
-      curl --fail --silent --show-error \"http://127.0.0.1:${PI_APP_PORT}${PI_HEALTH_PATH}\" >/dev/null
+      attempts=0
+      until curl --fail --silent --show-error \"http://127.0.0.1:${PI_APP_PORT}${PI_HEALTH_PATH}\" >/dev/null; do
+        attempts=\$((attempts + 1))
+        if [ \"\$attempts\" -ge 10 ]; then
+          echo \"Pi camera health check did not pass after restart.\" >&2
+          exit 1
+        fi
+        sleep 1
+      done
       systemctl --no-pager --full status ${PI_SERVICE_NAME}
     '"
   else
@@ -171,7 +180,15 @@ install_and_restart_service() {
       systemctl daemon-reload
       systemctl enable ${PI_SERVICE_NAME}
       systemctl restart ${PI_SERVICE_NAME}
-      curl --fail --silent --show-error \"http://127.0.0.1:${PI_APP_PORT}${PI_HEALTH_PATH}\" >/dev/null
+      attempts=0
+      until curl --fail --silent --show-error \"http://127.0.0.1:${PI_APP_PORT}${PI_HEALTH_PATH}\" >/dev/null; do
+        attempts=\$((attempts + 1))
+        if [ \"\$attempts\" -ge 10 ]; then
+          echo \"Pi camera health check did not pass after restart.\" >&2
+          exit 1
+        fi
+        sleep 1
+      done
       systemctl --no-pager --full status ${PI_SERVICE_NAME}
     '"
   fi

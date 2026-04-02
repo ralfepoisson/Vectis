@@ -1,4 +1,4 @@
-import type { CameraServiceConfig } from "./config";
+import type { CameraServiceConfig } from "./config.js";
 
 export interface PiCameraServiceUnitOptions {
   serviceName: string;

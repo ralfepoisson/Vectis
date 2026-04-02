@@ -2,16 +2,16 @@ import type { FastifyInstance } from "fastify";
 import Fastify from "fastify";
 import { PassThrough } from "node:stream";
 
-import { readCameraServiceConfig, type CameraServiceConfig } from "./config";
+import { readCameraServiceConfig, type CameraServiceConfig } from "./config.js";
 import {
   readHeartbeatSnapshot,
   type HeartbeatProvider
-} from "./heartbeat";
+} from "./heartbeat.js";
 import {
   spawnCameraProcess,
   type SpawnCameraProcess,
   type SpawnedCameraProcess
-} from "./rpicam";
+} from "./rpicam.js";
 
 export interface BuildAppOptions {
   config?: CameraServiceConfig;
@@ -60,7 +60,10 @@ export function buildApp(options: BuildAppOptions = {}) {
       codec: "h264",
       width: config.width,
       height: config.height,
-      framerate: config.framerate
+      framerate: config.framerate,
+      autofocusMode: config.autofocusMode,
+      autofocusRange: config.autofocusRange,
+      lensPosition: config.lensPosition
     }
   }));
 

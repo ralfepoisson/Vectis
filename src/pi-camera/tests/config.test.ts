@@ -17,7 +17,10 @@ describe("Pi camera config", () => {
       height: 1080,
       framerate: 30,
       bitrate: 4_000_000,
-      useLowLatency: true
+      useLowLatency: true,
+      autofocusMode: "continuous",
+      autofocusRange: "normal",
+      lensPosition: null
     });
   });
 
@@ -28,7 +31,10 @@ describe("Pi camera config", () => {
       CAMERA_FRAMERATE: "25",
       CAMERA_BITRATE: "2000000",
       CAMERA_LOW_LATENCY: "false",
-      RPICAM_BIN: "custom-rpicam-vid"
+      RPICAM_BIN: "custom-rpicam-vid",
+      CAMERA_AUTOFOCUS_MODE: "manual",
+      CAMERA_AUTOFOCUS_RANGE: "macro",
+      CAMERA_LENS_POSITION: "0.5"
     });
 
     expect(buildRpicamCommand(config)).toEqual({
@@ -38,6 +44,12 @@ describe("Pi camera config", () => {
         "0",
         "--nopreview",
         "--inline",
+        "--autofocus-mode",
+        "manual",
+        "--autofocus-range",
+        "macro",
+        "--lens-position",
+        "0.5",
         "--codec",
         "libav",
         "--libav-format",
@@ -62,5 +74,13 @@ describe("Pi camera config", () => {
         CAMERA_FRAMERATE: "0"
       })
     ).toThrow("CAMERA_FRAMERATE must be a positive number");
+  });
+
+  it("rejects invalid autofocus configuration", () => {
+    expect(() =>
+      readCameraServiceConfig({
+        CAMERA_AUTOFOCUS_MODE: "tracking"
+      })
+    ).toThrow("CAMERA_AUTOFOCUS_MODE must be one of: default, manual, auto, continuous");
   });
 });

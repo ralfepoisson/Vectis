@@ -1,11 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { readCameraServiceConfig } from "./config";
+import { readCameraServiceConfig } from "./config.js";
 import {
   renderPiCameraEnvironmentFile,
   renderPiCameraSystemdUnit
-} from "./deploy-config";
+} from "./deploy-config.js";
 
 async function main() {
   const [envOutputPath, serviceOutputPath] = process.argv.slice(2);
