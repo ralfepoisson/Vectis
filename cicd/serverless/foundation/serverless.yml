@@ -1,0 +1,492 @@
+service: vectis-foundation
+frameworkVersion: "4"
+
+provider:
+  name: aws
+  region: ${opt:region, env:AWS_REGION, 'eu-west-3'}
+  stage: ${opt:stage, 'prod'}
+  stackName: ${param:stackPrefix}-${sls:stage}-foundation
+
+params:
+  default:
+    stackPrefix: vectis
+    rootDomain: vectis-sense.ai
+    hostedZoneId: ""
+    acmCertificateArn: ""
+    databaseName: vectis_prod
+    databaseUsername: vectis
+    imageBucketName: ${param:stackPrefix}-${sls:stage}-${aws:accountId}-${aws:region}-images
+
+resources:
+  Resources:
+    Vpc:
+      Type: AWS::EC2::VPC
+      Properties:
+        CidrBlock: 10.42.0.0/16
+        EnableDnsHostnames: true
+        EnableDnsSupport: true
+        Tags:
+          - Key: Name
+            Value: ${param:stackPrefix}-${sls:stage}-vpc
+
+    InternetGateway:
+      Type: AWS::EC2::InternetGateway
+
+    VpcInternetGatewayAttachment:
+      Type: AWS::EC2::VPCGatewayAttachment
+      Properties:
+        InternetGatewayId:
+          Ref: InternetGateway
+        VpcId:
+          Ref: Vpc
+
+    PublicSubnetA:
+      Type: AWS::EC2::Subnet
+      Properties:
+        AvailabilityZone:
+          Fn::Select:
+            - 0
+            - Fn::GetAZs: ""
+        CidrBlock: 10.42.0.0/24
+        MapPublicIpOnLaunch: true
+        Tags:
+          - Key: Name
+            Value: ${param:stackPrefix}-${sls:stage}-public-a
+        VpcId:
+          Ref: Vpc
+
+    PublicSubnetB:
+      Type: AWS::EC2::Subnet
+      Properties:
+        AvailabilityZone:
+          Fn::Select:
+            - 1
+            - Fn::GetAZs: ""
+        CidrBlock: 10.42.1.0/24
+        MapPublicIpOnLaunch: true
+        Tags:
+          - Key: Name
+            Value: ${param:stackPrefix}-${sls:stage}-public-b
+        VpcId:
+          Ref: Vpc
+
+    PrivateSubnetA:
+      Type: AWS::EC2::Subnet
+      Properties:
+        AvailabilityZone:
+          Fn::Select:
+            - 0
+            - Fn::GetAZs: ""
+        CidrBlock: 10.42.10.0/24
+        Tags:
+          - Key: Name
+            Value: ${param:stackPrefix}-${sls:stage}-private-a
+        VpcId:
+          Ref: Vpc
+
+    PrivateSubnetB:
+      Type: AWS::EC2::Subnet
+      Properties:
+        AvailabilityZone:
+          Fn::Select:
+            - 1
+            - Fn::GetAZs: ""
+        CidrBlock: 10.42.11.0/24
+        Tags:
+          - Key: Name
+            Value: ${param:stackPrefix}-${sls:stage}-private-b
+        VpcId:
+          Ref: Vpc
+
+    PublicRouteTable:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId:
+          Ref: Vpc
+
+    PublicDefaultRoute:
+      Type: AWS::EC2::Route
+      DependsOn: VpcInternetGatewayAttachment
+      Properties:
+        DestinationCidrBlock: 0.0.0.0/0
+        GatewayId:
+          Ref: InternetGateway
+        RouteTableId:
+          Ref: PublicRouteTable
+
+    PublicSubnetARouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId:
+          Ref: PublicRouteTable
+        SubnetId:
+          Ref: PublicSubnetA
+
+    PublicSubnetBRouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId:
+          Ref: PublicRouteTable
+        SubnetId:
+          Ref: PublicSubnetB
+
+    PrivateRouteTable:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId:
+          Ref: Vpc
+
+    PrivateSubnetARouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId:
+          Ref: PrivateRouteTable
+        SubnetId:
+          Ref: PrivateSubnetA
+
+    PrivateSubnetBRouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId:
+          Ref: PrivateRouteTable
+        SubnetId:
+          Ref: PrivateSubnetB
+
+    AlbSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Allow public HTTP and HTTPS access to the Vectis load balancer.
+        SecurityGroupIngress:
+          - CidrIp: 0.0.0.0/0
+            FromPort: 80
+            IpProtocol: tcp
+            ToPort: 80
+          - CidrIp: 0.0.0.0/0
+            FromPort: 443
+            IpProtocol: tcp
+            ToPort: 443
+        VpcId:
+          Ref: Vpc
+
+    EcsServiceSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Allow ALB traffic into ECS services.
+        SecurityGroupIngress:
+          - FromPort: 80
+            IpProtocol: tcp
+            SourceSecurityGroupId:
+              Ref: AlbSecurityGroup
+            ToPort: 80
+          - FromPort: 3000
+            IpProtocol: tcp
+            SourceSecurityGroupId:
+              Ref: AlbSecurityGroup
+            ToPort: 3000
+        VpcId:
+          Ref: Vpc
+
+    DatabaseSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Allow PostgreSQL from the ECS service security group.
+        SecurityGroupIngress:
+          - FromPort: 5432
+            IpProtocol: tcp
+            SourceSecurityGroupId:
+              Ref: EcsServiceSecurityGroup
+            ToPort: 5432
+        VpcId:
+          Ref: Vpc
+
+    EcsCluster:
+      Type: AWS::ECS::Cluster
+      Properties:
+        ClusterName: ${param:stackPrefix}-${sls:stage}
+
+    ImageBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${param:imageBucketName}
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        VersioningConfiguration:
+          Status: Enabled
+
+    BackendEcrRepository:
+      Type: AWS::ECR::Repository
+      Properties:
+        RepositoryName: ${param:stackPrefix}/${sls:stage}/backend
+        ImageScanningConfiguration:
+          ScanOnPush: true
+
+    WebsiteEcrRepository:
+      Type: AWS::ECR::Repository
+      Properties:
+        RepositoryName: ${param:stackPrefix}/${sls:stage}/website
+        ImageScanningConfiguration:
+          ScanOnPush: true
+
+    WebappEcrRepository:
+      Type: AWS::ECR::Repository
+      Properties:
+        RepositoryName: ${param:stackPrefix}/${sls:stage}/webapp
+        ImageScanningConfiguration:
+          ScanOnPush: true
+
+    DatabaseUsernameSecret:
+      Type: AWS::SecretsManager::Secret
+      Properties:
+        Description: Database username for the Vectis production RDS instance.
+        Name: ${param:stackPrefix}/${sls:stage}/rds/username
+        SecretString: ${param:databaseUsername}
+
+    DatabasePasswordSecret:
+      Type: AWS::SecretsManager::Secret
+      Properties:
+        Description: Database password for the Vectis production RDS instance.
+        Name: ${param:stackPrefix}/${sls:stage}/rds/password
+        GenerateSecretString:
+          ExcludePunctuation: true
+          IncludeSpace: false
+          PasswordLength: 32
+
+    DatabaseSubnetGroup:
+      Type: AWS::RDS::DBSubnetGroup
+      Properties:
+        DBSubnetGroupDescription: Subnet group for the Vectis production database.
+        SubnetIds:
+          - Ref: PrivateSubnetA
+          - Ref: PrivateSubnetB
+
+    DatabaseInstance:
+      Type: AWS::RDS::DBInstance
+      Properties:
+        AllocatedStorage: 20
+        BackupRetentionPeriod: 7
+        DBInstanceClass: db.t4g.micro
+        DBName: ${param:databaseName}
+        DBSubnetGroupName:
+          Ref: DatabaseSubnetGroup
+        DeletionProtection: true
+        Engine: postgres
+        MasterUsername:
+          Fn::Sub:
+            - "{{resolve:secretsmanager:${UsernameSecret}:SecretString}}"
+            - UsernameSecret:
+                Ref: DatabaseUsernameSecret
+        MasterUserPassword:
+          Fn::Sub:
+            - "{{resolve:secretsmanager:${PasswordSecret}:SecretString}}"
+            - PasswordSecret:
+                Ref: DatabasePasswordSecret
+        MultiAZ: false
+        PubliclyAccessible: false
+        StorageEncrypted: true
+        VPCSecurityGroups:
+          - Fn::GetAtt:
+              - DatabaseSecurityGroup
+              - GroupId
+
+    ApplicationLoadBalancer:
+      Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+      Properties:
+        Name: ${param:stackPrefix}-${sls:stage}-alb
+        Scheme: internet-facing
+        SecurityGroups:
+          - Fn::GetAtt:
+              - AlbSecurityGroup
+              - GroupId
+        Subnets:
+          - Ref: PublicSubnetA
+          - Ref: PublicSubnetB
+        Type: application
+
+    HttpListener:
+      Type: AWS::ElasticLoadBalancingV2::Listener
+      Properties:
+        DefaultActions:
+          - RedirectConfig:
+              Port: "443"
+              Protocol: HTTPS
+              StatusCode: HTTP_301
+            Type: redirect
+        LoadBalancerArn:
+          Ref: ApplicationLoadBalancer
+        Port: 80
+        Protocol: HTTP
+
+    HttpsListener:
+      Type: AWS::ElasticLoadBalancingV2::Listener
+      Properties:
+        Certificates:
+          - CertificateArn: ${param:acmCertificateArn}
+        DefaultActions:
+          - FixedResponseConfig:
+              ContentType: text/plain
+              MessageBody: Host not configured.
+              StatusCode: "404"
+            Type: fixed-response
+        LoadBalancerArn:
+          Ref: ApplicationLoadBalancer
+        Port: 443
+        Protocol: HTTPS
+
+  Outputs:
+    VpcId:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-VpcId
+      Value:
+        Ref: Vpc
+
+    PublicSubnetAId:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-PublicSubnetAId
+      Value:
+        Ref: PublicSubnetA
+
+    PublicSubnetBId:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-PublicSubnetBId
+      Value:
+        Ref: PublicSubnetB
+
+    PrivateSubnetAId:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-PrivateSubnetAId
+      Value:
+        Ref: PrivateSubnetA
+
+    PrivateSubnetBId:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-PrivateSubnetBId
+      Value:
+        Ref: PrivateSubnetB
+
+    ClusterArn:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-ClusterArn
+      Value:
+        Fn::GetAtt:
+          - EcsCluster
+          - Arn
+
+    ClusterName:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-ClusterName
+      Value:
+        Ref: EcsCluster
+
+    ImageBucketName:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-ImageBucketName
+      Value:
+        Ref: ImageBucket
+
+    BackendRepositoryUri:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-BackendRepositoryUri
+      Value:
+        Fn::GetAtt:
+          - BackendEcrRepository
+          - RepositoryUri
+
+    WebsiteRepositoryUri:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-WebsiteRepositoryUri
+      Value:
+        Fn::GetAtt:
+          - WebsiteEcrRepository
+          - RepositoryUri
+
+    WebappRepositoryUri:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-WebappRepositoryUri
+      Value:
+        Fn::GetAtt:
+          - WebappEcrRepository
+          - RepositoryUri
+
+    DatabaseEndpointAddress:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-DatabaseEndpointAddress
+      Value:
+        Fn::GetAtt:
+          - DatabaseInstance
+          - Endpoint.Address
+
+    DatabaseEndpointPort:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-DatabaseEndpointPort
+      Value:
+        Fn::GetAtt:
+          - DatabaseInstance
+          - Endpoint.Port
+
+    DatabaseName:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-DatabaseName
+      Value: ${param:databaseName}
+
+    DatabaseUsernameSecretArn:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-DatabaseUsernameSecretArn
+      Value:
+        Ref: DatabaseUsernameSecret
+
+    DatabasePasswordSecretArn:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-DatabasePasswordSecretArn
+      Value:
+        Ref: DatabasePasswordSecret
+
+    AlbArn:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-AlbArn
+      Value:
+        Ref: ApplicationLoadBalancer
+
+    AlbDnsName:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-AlbDnsName
+      Value:
+        Fn::GetAtt:
+          - ApplicationLoadBalancer
+          - DNSName
+
+    AlbCanonicalHostedZoneId:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-AlbCanonicalHostedZoneId
+      Value:
+        Fn::GetAtt:
+          - ApplicationLoadBalancer
+          - CanonicalHostedZoneID
+
+    HttpsListenerArn:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-HttpsListenerArn
+      Value:
+        Ref: HttpsListener
+
+    AlbSecurityGroupId:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-AlbSecurityGroupId
+      Value:
+        Fn::GetAtt:
+          - AlbSecurityGroup
+          - GroupId
+
+    EcsServiceSecurityGroupId:
+      Export:
+        Name: ${param:stackPrefix}-${sls:stage}-EcsServiceSecurityGroupId
+      Value:
+        Fn::GetAtt:
+          - EcsServiceSecurityGroup
+          - GroupId

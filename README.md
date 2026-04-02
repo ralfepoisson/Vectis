@@ -1,5 +1,12 @@
 # Vectis – Intelligent Vision Platform
 
+Production domains:
+
+- `https://vectis-sense.ai` -> Marketing website
+- `https://www.vectis-sense.ai` -> Marketing website
+- `https://app.vectis-sense.ai` -> Webapp
+- `https://api.vectis-sense.ai` -> Backend
+
 ## Overview
 
 Vectis is an **Intelligent Vision Platform** designed to transform raw visual input (images, video streams, or camera feeds) into **structured, actionable insights** through AI-powered interpretation and orchestration.

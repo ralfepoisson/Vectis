@@ -1,0 +1,1192 @@
+openapi: 3.1.0
+info:
+  title: Vectis Backend API
+  version: 0.1.0
+  summary: Tenant-aware API for the Vectis platform backend.
+  description: >
+    OpenAPI specification for the current Vectis backend. The platform currently
+    exposes a mix of seeded overview/dashboard endpoints and persisted tenant-scoped
+    CRUD endpoints for premises and cameras. Local development uses PostgreSQL,
+    and production is intended to use PostgreSQL via AWS RDS.
+servers:
+  - url: http://localhost:3000
+    description: Local backend server
+tags:
+  - name: Health
+  - name: Platform
+  - name: Premises
+  - name: Cameras
+  - name: Agents
+  - name: Ingest
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      operationId: getHealth
+      responses:
+        "200":
+          description: Backend is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /api/v1/platform/overview:
+    get:
+      tags:
+        - Platform
+      summary: Get platform overview
+      operationId: getPlatformOverview
+      responses:
+        "200":
+          description: Seeded platform overview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformOverviewResponse"
+  /api/v1/cameras:
+    get:
+      tags:
+        - Platform
+      summary: List seeded dashboard cameras
+      operationId: listDashboardCameras
+      responses:
+        "200":
+          description: Seeded camera resources for the dashboard.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardCamerasResponse"
+  /api/v1/events:
+    get:
+      tags:
+        - Platform
+      summary: List seeded vision events
+      operationId: listVisionEvents
+      responses:
+        "200":
+          description: Seeded event resources.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VisionEventsResponse"
+  /api/v1/rules:
+    get:
+      tags:
+        - Platform
+      summary: List seeded automation rules
+      operationId: listAutomationRules
+      responses:
+        "200":
+          description: Seeded automation rules.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRulesResponse"
+  /api/v1/premises:
+    get:
+      tags:
+        - Premises
+      summary: List premises for the current tenant
+      operationId: listPremises
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "200":
+          description: Tenant-scoped premises.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PremisesListResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+    post:
+      tags:
+        - Premises
+      summary: Create a premises
+      operationId: createPremises
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/UserHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePremisesRequest"
+      responses:
+        "201":
+          description: Premises created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PremisesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+  /api/v1/premises/{premisesId}:
+    get:
+      tags:
+        - Premises
+      summary: Get a premises by id
+      operationId: getPremises
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/PremisesId"
+      responses:
+        "200":
+          description: Premises found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PremisesResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+    patch:
+      tags:
+        - Premises
+      summary: Update a premises
+      operationId: updatePremises
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/UserHeader"
+        - $ref: "#/components/parameters/PremisesId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePremisesRequest"
+      responses:
+        "200":
+          description: Premises updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PremisesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+    delete:
+      tags:
+        - Premises
+      summary: Delete a premises
+      operationId: deletePremises
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/UserHeader"
+        - $ref: "#/components/parameters/PremisesId"
+      responses:
+        "204":
+          description: Premises deleted.
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+  /api/v1/premises/{premisesId}/cameras:
+    get:
+      tags:
+        - Cameras
+      summary: List cameras for a premises
+      operationId: listPremisesCameras
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/PremisesId"
+      responses:
+        "200":
+          description: Cameras for the premises.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PremisesCameraListResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+    post:
+      tags:
+        - Cameras
+      summary: Create a camera under a premises
+      operationId: createPremisesCamera
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/UserHeader"
+        - $ref: "#/components/parameters/PremisesId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCameraRequest"
+      responses:
+        "201":
+          description: Camera created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PremisesCameraResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+  /api/v1/premises/{premisesId}/cameras/{cameraId}:
+    get:
+      tags:
+        - Cameras
+      summary: Get a camera by id
+      operationId: getPremisesCamera
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/PremisesId"
+        - $ref: "#/components/parameters/CameraId"
+      responses:
+        "200":
+          description: Camera found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PremisesCameraResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+    patch:
+      tags:
+        - Cameras
+      summary: Update a camera
+      operationId: updatePremisesCamera
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/UserHeader"
+        - $ref: "#/components/parameters/PremisesId"
+        - $ref: "#/components/parameters/CameraId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCameraRequest"
+      responses:
+        "200":
+          description: Camera updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PremisesCameraResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+    delete:
+      tags:
+        - Cameras
+      summary: Delete a camera
+      operationId: deletePremisesCamera
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/UserHeader"
+        - $ref: "#/components/parameters/PremisesId"
+        - $ref: "#/components/parameters/CameraId"
+      responses:
+        "204":
+          description: Camera deleted.
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+  /api/v1/agents:
+    get:
+      tags:
+        - Agents
+      summary: List agents for the current tenant
+      operationId: listAgents
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "200":
+          description: Tenant-scoped agents.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentListResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+    post:
+      tags:
+        - Agents
+      summary: Create an agent
+      operationId: createAgent
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/UserHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgentRequest"
+      responses:
+        "201":
+          description: Agent created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+  /api/v1/agents/{agentId}:
+    get:
+      tags:
+        - Agents
+      summary: Get an agent by id
+      operationId: getAgent
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "200":
+          description: Agent found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+    patch:
+      tags:
+        - Agents
+      summary: Update an agent
+      operationId: updateAgent
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/UserHeader"
+        - $ref: "#/components/parameters/AgentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentRequest"
+      responses:
+        "200":
+          description: Agent updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+    delete:
+      tags:
+        - Agents
+      summary: Delete an agent
+      operationId: deleteAgent
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/UserHeader"
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "204":
+          description: Agent deleted.
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+  /api/v1/agents/{agentId}/camera-health:
+    post:
+      tags:
+        - Ingest
+      summary: Submit a camera health report from an agent
+      operationId: createCameraHealthReport
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/AgentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCameraHealthReportRequest"
+      responses:
+        "202":
+          description: Health report accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraHealthReportResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+  /api/v1/agents/{agentId}/frames:
+    post:
+      tags:
+        - Ingest
+      summary: Submit multiple filtered frames from an agent
+      operationId: ingestAgentFrames
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/AgentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestFramesRequest"
+      responses:
+        "202":
+          description: Frames accepted and persisted to storage.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraFrameListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+components:
+  parameters:
+    TenantHeader:
+      name: x-tenant-id
+      in: header
+      required: true
+      description: Tenant account identifier used to scope protected resources.
+      schema:
+        type: string
+    UserHeader:
+      name: x-user-id
+      in: header
+      required: true
+      description: Acting user identifier for write operations.
+      schema:
+        type: string
+    PremisesId:
+      name: premisesId
+      in: path
+      required: true
+      schema:
+        type: string
+    CameraId:
+      name: cameraId
+      in: path
+      required: true
+      schema:
+        type: string
+    AgentId:
+      name: agentId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    UnauthorizedResponse:
+      description: Request is missing tenant or user context.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: Unauthorized
+            message: Tenant context is required for this resource.
+    BadRequestResponse:
+      description: Request payload failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFoundResponse:
+      description: Requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          const: ok
+    PlatformOverviewResponse:
+      type: object
+      required:
+        - overview
+      properties:
+        overview:
+          $ref: "#/components/schemas/PlatformOverview"
+    DashboardCamerasResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardCamera"
+    VisionEventsResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VisionEvent"
+    AutomationRulesResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationRule"
+    PremisesListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Premises"
+    PremisesResponse:
+      type: object
+      required:
+        - premises
+      properties:
+        premises:
+          $ref: "#/components/schemas/Premises"
+    PremisesCameraListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PremisesCamera"
+    PremisesCameraResponse:
+      type: object
+      required:
+        - camera
+      properties:
+        camera:
+          $ref: "#/components/schemas/PremisesCamera"
+    AgentListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Agent"
+    AgentResponse:
+      type: object
+      required:
+        - agent
+      properties:
+        agent:
+          $ref: "#/components/schemas/Agent"
+    CameraHealthReportResponse:
+      type: object
+      required:
+        - healthReport
+      properties:
+        healthReport:
+          $ref: "#/components/schemas/CameraHealthReport"
+    CameraFrameListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CameraFrame"
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+    PlatformOverview:
+      type: object
+      required:
+        - tagline
+        - valueProposition
+        - mvpFocus
+        - captureToAction
+      properties:
+        tagline:
+          type: string
+        valueProposition:
+          type: string
+        mvpFocus:
+          type: array
+          items:
+            type: string
+        captureToAction:
+          type: array
+          items:
+            type: string
+    DashboardCamera:
+      type: object
+      required:
+        - id
+        - name
+        - location
+        - status
+        - fps
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        location:
+          type: string
+        status:
+          type: string
+          enum:
+            - online
+            - degraded
+            - offline
+        fps:
+          type: number
+    VisionEvent:
+      type: object
+      required:
+        - id
+        - timestamp
+        - source
+        - eventType
+        - confidence
+        - severity
+        - summary
+      properties:
+        id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        source:
+          type: string
+        eventType:
+          type: string
+          enum:
+            - person_detected
+            - motion_detected
+            - queue_growing
+            - safety_violation
+        confidence:
+          type: number
+        severity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+        summary:
+          type: string
+    AutomationRule:
+      type: object
+      required:
+        - id
+        - name
+        - condition
+        - action
+        - enabled
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        condition:
+          type: string
+        action:
+          type: string
+        enabled:
+          type: boolean
+    PremisesType:
+      type: string
+      enum:
+        - house
+        - apartment
+        - office
+        - factory
+        - warehouse
+        - retail
+        - other
+    CameraStatus:
+      type: string
+      enum:
+        - online
+        - degraded
+        - offline
+        - maintenance
+    AgentStatus:
+      type: string
+      enum:
+        - online
+        - offline
+        - maintenance
+    Premises:
+      type: object
+      required:
+        - id
+        - tenantId
+        - name
+        - type
+        - addressLine1
+        - city
+        - countryCode
+        - createdByUserId
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: "#/components/schemas/PremisesType"
+        addressLine1:
+          type: string
+        addressLine2:
+          type:
+            - string
+            - "null"
+        city:
+          type: string
+        state:
+          type:
+            - string
+            - "null"
+        postalCode:
+          type:
+            - string
+            - "null"
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+        notes:
+          type:
+            - string
+            - "null"
+        createdByUserId:
+          type: string
+        updatedByUserId:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PremisesCamera:
+      type: object
+      required:
+        - id
+        - tenantId
+        - premisesId
+        - name
+        - streamUrl
+        - status
+        - createdByUserId
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        premisesId:
+          type: string
+        name:
+          type: string
+        streamUrl:
+          type: string
+          format: uri
+        status:
+          $ref: "#/components/schemas/CameraStatus"
+        model:
+          type:
+            - string
+            - "null"
+        serialNumber:
+          type:
+            - string
+            - "null"
+        locationDescription:
+          type:
+            - string
+            - "null"
+        createdByUserId:
+          type: string
+        updatedByUserId:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Agent:
+      type: object
+      required:
+        - id
+        - tenantId
+        - premisesId
+        - name
+        - status
+        - createdByUserId
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        premisesId:
+          type: string
+        name:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+        softwareVersion:
+          type:
+            - string
+            - "null"
+        locationDescription:
+          type:
+            - string
+            - "null"
+        hostName:
+          type:
+            - string
+            - "null"
+        createdByUserId:
+          type: string
+        updatedByUserId:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CameraHealthReport:
+      type: object
+      required:
+        - id
+        - tenantId
+        - agentId
+        - cameraId
+        - status
+        - reportedAt
+        - receivedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        agentId:
+          type: string
+        cameraId:
+          type: string
+        status:
+          $ref: "#/components/schemas/CameraStatus"
+        temperatureCelsius:
+          type:
+            - number
+            - "null"
+        uptimeSeconds:
+          type:
+            - integer
+            - "null"
+        ipAddress:
+          type:
+            - string
+            - "null"
+        reportedAt:
+          type: string
+          format: date-time
+        receivedAt:
+          type: string
+          format: date-time
+    CameraFrame:
+      type: object
+      required:
+        - id
+        - tenantId
+        - agentId
+        - cameraId
+        - storagePath
+        - contentType
+        - byteSize
+        - capturedAt
+        - receivedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        agentId:
+          type: string
+        cameraId:
+          type: string
+        storagePath:
+          type: string
+        contentType:
+          type: string
+        byteSize:
+          type: integer
+        capturedAt:
+          type: string
+          format: date-time
+        receivedAt:
+          type: string
+          format: date-time
+    CreatePremisesRequest:
+      type: object
+      required:
+        - name
+        - type
+        - addressLine1
+        - city
+        - countryCode
+      properties:
+        name:
+          type: string
+          minLength: 1
+        type:
+          $ref: "#/components/schemas/PremisesType"
+        addressLine1:
+          type: string
+          minLength: 1
+        addressLine2:
+          type: string
+          minLength: 1
+        city:
+          type: string
+          minLength: 1
+        state:
+          type: string
+          minLength: 1
+        postalCode:
+          type: string
+          minLength: 1
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+        notes:
+          type: string
+          minLength: 1
+    UpdatePremisesRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+        type:
+          $ref: "#/components/schemas/PremisesType"
+        addressLine1:
+          type: string
+          minLength: 1
+        addressLine2:
+          type: string
+          minLength: 1
+        city:
+          type: string
+          minLength: 1
+        state:
+          type: string
+          minLength: 1
+        postalCode:
+          type: string
+          minLength: 1
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+        notes:
+          type: string
+          minLength: 1
+    CreateCameraRequest:
+      type: object
+      required:
+        - name
+        - streamUrl
+      properties:
+        name:
+          type: string
+          minLength: 1
+        streamUrl:
+          type: string
+          format: uri
+        status:
+          $ref: "#/components/schemas/CameraStatus"
+        model:
+          type: string
+          minLength: 1
+        serialNumber:
+          type: string
+          minLength: 1
+        locationDescription:
+          type: string
+          minLength: 1
+    UpdateCameraRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+        streamUrl:
+          type: string
+          format: uri
+        status:
+          $ref: "#/components/schemas/CameraStatus"
+        model:
+          type: string
+          minLength: 1
+        serialNumber:
+          type: string
+          minLength: 1
+        locationDescription:
+          type: string
+          minLength: 1
+    CreateAgentRequest:
+      type: object
+      required:
+        - premisesId
+        - name
+      properties:
+        premisesId:
+          type: string
+        name:
+          type: string
+          minLength: 1
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+        softwareVersion:
+          type: string
+          minLength: 1
+        locationDescription:
+          type: string
+          minLength: 1
+        hostName:
+          type: string
+          minLength: 1
+    UpdateAgentRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+        softwareVersion:
+          type: string
+          minLength: 1
+        locationDescription:
+          type: string
+          minLength: 1
+        hostName:
+          type: string
+          minLength: 1
+    CreateCameraHealthReportRequest:
+      type: object
+      required:
+        - cameraId
+        - status
+        - reportedAt
+      properties:
+        cameraId:
+          type: string
+        status:
+          $ref: "#/components/schemas/CameraStatus"
+        temperatureCelsius:
+          type: number
+        uptimeSeconds:
+          type: integer
+          minimum: 0
+        ipAddress:
+          type: string
+          minLength: 1
+        reportedAt:
+          type: string
+          format: date-time
+    IngestFramesRequest:
+      type: object
+      required:
+        - frames
+      properties:
+        frames:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required:
+              - cameraId
+              - timestamp
+              - contentType
+              - dataBase64
+            properties:
+              cameraId:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+              contentType:
+                type: string
+                enum:
+                  - image/jpeg
+                  - image/png
+              dataBase64:
+                type: string
+                minLength: 1

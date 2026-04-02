@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PremisesType {
+  HOUSE
+  APARTMENT
+  OFFICE
+  FACTORY
+  WAREHOUSE
+  RETAIL
+  OTHER
+}
+
+enum CameraStatus {
+  ONLINE
+  DEGRADED
+  OFFLINE
+  MAINTENANCE
+}
+
+enum AgentStatus {
+  ONLINE
+  OFFLINE
+  MAINTENANCE
+}
+
+model Tenant {
+  id            String              @id
+  name          String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  users         User[]
+  premises      Premises[]
+  cameras       Camera[]
+  agents        Agent[]
+  healthReports CameraHealthReport[]
+  frames        CameraFrame[]
+}
+
+model User {
+  id                String              @id
+  tenantId          String
+  displayName       String?
+  email             String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  premisesCreated   Premises[]          @relation("PremisesCreatedBy")
+  premisesUpdated   Premises[]          @relation("PremisesUpdatedBy")
+  camerasCreated    Camera[]            @relation("CamerasCreatedBy")
+  camerasUpdated    Camera[]            @relation("CamerasUpdatedBy")
+  agentsCreated     Agent[]             @relation("AgentsCreatedBy")
+  agentsUpdated     Agent[]             @relation("AgentsUpdatedBy")
+
+  @@index([tenantId])
+}
+
+model Premises {
+  id              String        @id @default(cuid())
+  tenantId        String
+  name            String
+  type            PremisesType
+  addressLine1    String
+  addressLine2    String?
+  city            String
+  state           String?
+  postalCode      String?
+  countryCode     String
+  notes           String?
+  createdByUserId String
+  updatedByUserId String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdByUser   User          @relation("PremisesCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedByUser   User?         @relation("PremisesUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  cameras         Camera[]
+  agents          Agent[]
+
+  @@index([tenantId])
+}
+
+model Camera {
+  id                  String               @id @default(cuid())
+  tenantId            String
+  premisesId          String
+  name                String
+  streamUrl           String
+  status              CameraStatus @default(OFFLINE)
+  model               String?
+  serialNumber        String?
+  locationDescription String?
+  createdByUserId     String
+  updatedByUserId     String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  premises            Premises             @relation(fields: [premisesId], references: [id], onDelete: Cascade)
+  createdByUser       User                 @relation("CamerasCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedByUser       User?                @relation("CamerasUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  healthReports       CameraHealthReport[]
+  frames              CameraFrame[]
+
+  @@index([tenantId])
+  @@index([tenantId, premisesId])
+}
+
+model Agent {
+  id                  String               @id @default(cuid())
+  tenantId            String
+  premisesId          String
+  name                String
+  status              AgentStatus          @default(OFFLINE)
+  softwareVersion     String?
+  locationDescription String?
+  hostName            String?
+  createdByUserId     String
+  updatedByUserId     String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  premises            Premises             @relation(fields: [premisesId], references: [id], onDelete: Cascade)
+  createdByUser       User                 @relation("AgentsCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedByUser       User?                @relation("AgentsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  healthReports       CameraHealthReport[]
+  frames              CameraFrame[]
+
+  @@index([tenantId])
+  @@index([tenantId, premisesId])
+}
+
+model CameraHealthReport {
+  id                 String       @id @default(cuid())
+  tenantId           String
+  agentId            String
+  cameraId           String
+  status             CameraStatus
+  temperatureCelsius Float?
+  uptimeSeconds      Int?
+  ipAddress          String?
+  reportedAt         DateTime
+  receivedAt         DateTime     @default(now())
+  tenant             Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent              Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  camera             Camera       @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, agentId])
+  @@index([tenantId, cameraId, reportedAt])
+}
+
+model CameraFrame {
+  id          String   @id @default(cuid())
+  tenantId    String
+  agentId     String
+  cameraId    String
+  storagePath String
+  contentType String
+  byteSize    Int
+  capturedAt  DateTime
+  receivedAt  DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  camera      Camera   @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, agentId])
+  @@index([tenantId, cameraId, capturedAt])
+}

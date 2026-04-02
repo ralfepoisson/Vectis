@@ -1,23 +1,111 @@
 @startuml
-title Vectis MVP ERD
+title Vectis Platform ERD
 
 skinparam shadowing false
 hide circle
 skinparam linetype ortho
 
-entity "camera_sources" as camera_sources {
+entity "tenant_accounts" as tenant_accounts {
   *id : uuid
   --
+  name : varchar?
+  created_at : timestamptz
+  updated_at : timestamptz
+}
+
+entity "tenant_users" as tenant_users {
+  *id : uuid
+  --
+  tenant_account_id : uuid
+  display_name : varchar?
+  email : varchar?
+  created_at : timestamptz
+  updated_at : timestamptz
+}
+
+entity "premises" as premises {
+  *id : uuid
+  --
+  tenant_account_id : uuid
   name : varchar
-  location : varchar
+  premises_type : varchar
+  address_line_1 : varchar
+  address_line_2 : varchar?
+  city : varchar
+  state : varchar?
+  postal_code : varchar?
+  country_code : char(2)
+  notes : text?
+  created_by_user_id : uuid
+  updated_by_user_id : uuid?
+  created_at : timestamptz
+  updated_at : timestamptz
+}
+
+entity "cameras" as cameras {
+  *id : uuid
+  --
+  tenant_account_id : uuid
+  premises_id : uuid
+  name : varchar
+  stream_url : varchar
   status : varchar
-  fps : integer
+  model : varchar?
+  serial_number : varchar?
+  location_description : varchar?
+  created_by_user_id : uuid
+  updated_by_user_id : uuid?
+  created_at : timestamptz
+  updated_at : timestamptz
+}
+
+entity "agents" as agents {
+  *id : uuid
+  --
+  tenant_account_id : uuid
+  premises_id : uuid
+  name : varchar
+  status : varchar
+  software_version : varchar?
+  location_description : varchar?
+  host_name : varchar?
+  created_by_user_id : uuid
+  updated_by_user_id : uuid?
+  created_at : timestamptz
+  updated_at : timestamptz
+}
+
+entity "camera_health_reports" as camera_health_reports {
+  *id : uuid
+  --
+  tenant_account_id : uuid
+  agent_id : uuid
+  camera_id : uuid
+  status : varchar
+  temperature_celsius : float?
+  uptime_seconds : integer?
+  ip_address : varchar?
+  reported_at : timestamptz
+  received_at : timestamptz
+}
+
+entity "camera_frames" as camera_frames {
+  *id : uuid
+  --
+  tenant_account_id : uuid
+  agent_id : uuid
+  camera_id : uuid
+  storage_key : varchar
+  content_type : varchar
+  byte_size : integer
+  captured_at : timestamptz
+  received_at : timestamptz
 }
 
 entity "vision_events" as vision_events {
   *id : uuid
   --
-  camera_source_id : uuid
+  camera_id : uuid
   event_type : varchar
   severity : varchar
   confidence : decimal
@@ -43,7 +131,22 @@ entity "rule_executions" as rule_executions {
   triggered_at : timestamptz
 }
 
-camera_sources ||--o{ vision_events
+tenant_accounts ||--o{ tenant_users
+tenant_accounts ||--o{ premises
+tenant_accounts ||--o{ cameras
+tenant_accounts ||--o{ agents
+tenant_accounts ||--o{ camera_health_reports
+tenant_accounts ||--o{ camera_frames
+tenant_users ||--o{ premises
+tenant_users ||--o{ cameras
+tenant_users ||--o{ agents
+premises ||--o{ cameras
+premises ||--o{ agents
+agents ||--o{ camera_health_reports
+agents ||--o{ camera_frames
+cameras ||--o{ vision_events
+cameras ||--o{ camera_health_reports
+cameras ||--o{ camera_frames
 automation_rules ||--o{ rule_executions
 vision_events ||--o{ rule_executions
 

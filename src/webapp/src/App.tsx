@@ -16,6 +16,11 @@ export function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div>
+          <img
+            className="sidebar-logo"
+            src="/vectis-logo-icon-color.png"
+            alt="Vectis"
+          />
           <p className="sidebar-eyebrow">Vectis</p>
           <h1>Control Center</h1>
           <p className="sidebar-copy">

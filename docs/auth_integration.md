@@ -117,11 +117,20 @@ window.__VECTIS_CONFIG__ = Object.assign({
 }, window.__VECTIS_CONFIG__ || {});
 ```
 
-Production frontend builds currently default `authServiceSignInUrl` to:
+For the production Vectis deployment with dedicated application subdomains, frontend runtime settings should use:
+
+```text
+apiBaseUrl=https://api.vectis-sense.ai/api/v1
+appBaseUrl=https://app.vectis-sense.ai
+```
+
+The authentication service host remains a separate configurable value. If Vectis production is still using the central Life2 auth service, the frontend sign-in URL would remain:
 
 ```text
 https://auth.life-sqrd.com/signIn
 ```
+
+That sign-in URL should be treated as configurable deployment-time input rather than part of the Vectis application domain itself.
 
 That default is emitted from:
 

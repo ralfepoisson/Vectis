@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vectis-agent"
+version = "0.1.0"
+description = "On-premises video gateway agent for Raspberry Pi camera deployments"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0,<1.0.0",
+  "httpx>=0.28.0,<0.29.0",
+  "numpy>=2.1.0,<3.0.0",
+  "opencv-python-headless>=4.10.0,<5.0.0",
+  "psutil>=6.0.0,<7.0.0",
+  "pydantic>=2.9.0,<3.0.0",
+  "pydantic-settings>=2.5.0,<3.0.0",
+  "PyYAML>=6.0.2,<7.0.0",
+  "uvicorn>=0.32.0,<1.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0,<9.0.0",
+  "pytest-cov>=5.0.0,<6.0.0",
+]
+
+[project.scripts]
+vectis-agent = "agent.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+include = ["agent*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

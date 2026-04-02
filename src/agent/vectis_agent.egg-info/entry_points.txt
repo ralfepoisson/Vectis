@@ -1,0 +1,2 @@
+[console_scripts]
+vectis-agent = agent.main:main

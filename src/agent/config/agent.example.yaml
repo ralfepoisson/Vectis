@@ -1,0 +1,58 @@
+device_id: pi-lobby-01
+source_stream_id: lobby-main
+
+camera:
+  stream_url: http://192.168.1.50:8080/stream
+  heartbeat_url: http://192.168.1.50:8080/heartbeat
+  reconnect_delay_seconds: 5
+  connect_timeout_seconds: 10
+
+preview:
+  interval_seconds: 2
+  max_width: 640
+  jpeg_quality: 75
+
+motion:
+  enabled: true
+  min_area: 500
+  delta_threshold: 25
+  blur_kernel_size: 5
+  min_motion_frames: 2
+  cooldown_seconds: 3
+  pre_trigger_seconds: 3
+  post_trigger_seconds: 5
+  upload_mode: frames
+  clip_fps: 8
+  clip_max_width: 960
+  jpeg_quality: 80
+
+buffer:
+  retention_seconds: 10
+  max_frames: 300
+
+backend:
+  base_url: https://api.vectis-sense.ai
+  tenant_id: tenant-demo
+  agent_id: agent-demo
+  camera_id: camera-demo
+  auth_token: change-me
+  timeout_seconds: 20
+  verify_tls: true
+  retry_initial_delay_seconds: 2
+  retry_max_delay_seconds: 60
+
+queue:
+  path: ./data/queue
+  max_bytes: 536870912
+  retention_hours: 24
+  max_attempts: 20
+
+telemetry:
+  interval_seconds: 30
+
+api:
+  host: 0.0.0.0
+  port: 8080
+
+logging:
+  level: INFO

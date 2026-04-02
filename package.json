@@ -5,6 +5,7 @@
   "workspaces": [
     "src/shared",
     "src/backend",
+    "src/pi-camera",
     "src/website",
     "src/webapp"
   ],
@@ -12,6 +13,7 @@
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "dev:backend": "npm run dev -w @vectis/backend",
+    "dev:pi-camera": "npm run dev -w @vectis/pi-camera",
     "dev:website": "npm run dev -w @vectis/website",
     "dev:webapp": "npm run dev -w @vectis/webapp"
   },

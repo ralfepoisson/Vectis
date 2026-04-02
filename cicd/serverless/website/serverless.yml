@@ -1,0 +1,148 @@
+service: vectis-website-service
+frameworkVersion: "4"
+
+provider:
+  name: aws
+  region: ${opt:region, env:AWS_REGION, 'eu-west-3'}
+  stage: ${opt:stage, 'prod'}
+  stackName: ${param:stackPrefix}-${sls:stage}-website
+
+params:
+  default:
+    stackPrefix: vectis
+    rootDomain: vectis-sense.ai
+    imageUri: ""
+    desiredCount: 1
+
+resources:
+  Resources:
+    WebsiteLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /ecs/${param:stackPrefix}/${sls:stage}/website
+        RetentionInDays: 14
+
+    WebsiteExecutionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Statement:
+            - Action: sts:AssumeRole
+              Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+          Version: "2012-10-17"
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+    WebsiteTargetGroup:
+      Type: AWS::ElasticLoadBalancingV2::TargetGroup
+      Properties:
+        HealthCheckPath: /
+        HealthCheckProtocol: HTTP
+        Matcher:
+          HttpCode: 200-399
+        Port: 80
+        Protocol: HTTP
+        TargetType: ip
+        VpcId:
+          Fn::ImportValue: ${param:stackPrefix}-${sls:stage}-VpcId
+
+    WebsiteListenerRule:
+      Type: AWS::ElasticLoadBalancingV2::ListenerRule
+      Properties:
+        Actions:
+          - TargetGroupArn:
+              Ref: WebsiteTargetGroup
+            Type: forward
+        Conditions:
+          - Field: host-header
+            HostHeaderConfig:
+              Values:
+                - ${param:rootDomain}
+                - www.${param:rootDomain}
+        ListenerArn:
+          Fn::ImportValue: ${param:stackPrefix}-${sls:stage}-HttpsListenerArn
+        Priority: 100
+
+    WebsiteRootDnsRecord:
+      Type: AWS::Route53::RecordSet
+      Properties:
+        AliasTarget:
+          DNSName:
+            Fn::ImportValue: ${param:stackPrefix}-${sls:stage}-AlbDnsName
+          HostedZoneId:
+            Fn::ImportValue: ${param:stackPrefix}-${sls:stage}-AlbCanonicalHostedZoneId
+        HostedZoneId: ${param:hostedZoneId}
+        Name: ${param:rootDomain}
+        Type: A
+
+    WebsiteWwwDnsRecord:
+      Type: AWS::Route53::RecordSet
+      Properties:
+        AliasTarget:
+          DNSName:
+            Fn::ImportValue: ${param:stackPrefix}-${sls:stage}-AlbDnsName
+          HostedZoneId:
+            Fn::ImportValue: ${param:stackPrefix}-${sls:stage}-AlbCanonicalHostedZoneId
+        HostedZoneId: ${param:hostedZoneId}
+        Name: www.${param:rootDomain}
+        Type: A
+
+    WebsiteTaskDefinition:
+      Type: AWS::ECS::TaskDefinition
+      Properties:
+        Cpu: "256"
+        ExecutionRoleArn:
+          Fn::GetAtt:
+            - WebsiteExecutionRole
+            - Arn
+        Family: ${param:stackPrefix}-${sls:stage}-website
+        Memory: "512"
+        NetworkMode: awsvpc
+        RequiresCompatibilities:
+          - FARGATE
+        ContainerDefinitions:
+          - Name: website
+            Image: ${param:imageUri}
+            Essential: true
+            PortMappings:
+              - ContainerPort: 80
+                Protocol: tcp
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group:
+                  Ref: WebsiteLogGroup
+                awslogs-region: ${aws:region}
+                awslogs-stream-prefix: ecs
+
+    WebsiteService:
+      Type: AWS::ECS::Service
+      DependsOn:
+        - WebsiteListenerRule
+      Properties:
+        Cluster:
+          Fn::ImportValue: ${param:stackPrefix}-${sls:stage}-ClusterArn
+        DeploymentConfiguration:
+          MaximumPercent: 200
+          MinimumHealthyPercent: 50
+        DesiredCount: ${param:desiredCount}
+        HealthCheckGracePeriodSeconds: 30
+        LaunchType: FARGATE
+        LoadBalancers:
+          - ContainerName: website
+            ContainerPort: 80
+            TargetGroupArn:
+              Ref: WebsiteTargetGroup
+        NetworkConfiguration:
+          AwsvpcConfiguration:
+            AssignPublicIp: ENABLED
+            SecurityGroups:
+              - Fn::ImportValue: ${param:stackPrefix}-${sls:stage}-EcsServiceSecurityGroupId
+            Subnets:
+              - Fn::ImportValue: ${param:stackPrefix}-${sls:stage}-PublicSubnetAId
+              - Fn::ImportValue: ${param:stackPrefix}-${sls:stage}-PublicSubnetBId
+        PlatformVersion: LATEST
+        TaskDefinition:
+          Ref: WebsiteTaskDefinition

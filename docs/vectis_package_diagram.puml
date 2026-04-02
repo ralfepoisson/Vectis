@@ -1,35 +1,98 @@
 @startuml
-title Vectis MVP Package Diagram
+title Vectis Platform Package Diagram
 
 skinparam shadowing false
 skinparam packageStyle rectangle
 skinparam defaultTextAlignment center
 skinparam linetype ortho
 
-package "src" {
-  package "website" as Website
-  package "webapp" as Webapp
-  package "backend" as Backend
-  package "shared" as Shared
+package "Development Workspace" {
+  package "src" {
+    package "website" as Website
+    package "webapp" as Webapp
+    package "backend" as Backend
+    package "pi-camera" as PiCamera
+    package "agent" as Agent
+    package "shared" as Shared
+  }
+
+  package "cicd/serverless" as Serverless
 }
 
-database "Future Postgres" as Postgres
-queue "Future Broker" as Broker
-collections "Future Object Store" as ObjectStore
+database "Local SQLite Queue" as LocalQueue
+database "App DB\nLocal Postgres / AWS RDS" as AppDb
+folder "Frame Storage\nLocal FS / S3" as FrameStore
+
+cloud "AWS Production" {
+  package "Amazon ECS" {
+    component "website service" as AwsWebsite
+    component "webapp service" as AwsWebapp
+    component "backend service" as AwsBackend
+  }
+
+  component "AWS Lambda\nimage-processing-worker" as ImageWorker
+  database "Amazon RDS\nPostgreSQL" as Rds
+  collections "Amazon S3\nimage bucket" as S3
+  collections "Amazon ECR\ncontainer images" as Ecr
+  component "AWS Secrets Manager" as Secrets
+  component "Application Load Balancer" as Alb
+}
+
+node "Home LAN" {
+  node "Raspberry Pi" {
+    component "pi-camera service" as PiRuntime
+    component "production agent" as ProdAgent
+  }
+}
+
+component "Developer Machine" as DevMachine
 
 Website ..> Shared : product messaging\nsample content
 Webapp ..> Shared : types and seeded data
 Backend ..> Shared : contracts and sample resources
 
 Webapp --> Backend : REST /api/v1
-Backend ..> Postgres : planned persistence
-Backend ..> Broker : planned event dispatch
-Backend ..> ObjectStore : planned media storage
+Agent --> PiCamera : pull HTTP MPEG-TS stream
+Agent --> Backend : HTTPS uploads\npreview, motion, telemetry
+Agent --> LocalQueue : persist outbound payloads\nand retry state
+Backend --> AppDb : Prisma ORM\nmigrations + CRUD persistence
+Backend --> FrameStore : persist filtered frames\nfor later processing
+Serverless ..> AwsWebsite : deploy ECS service
+Serverless ..> AwsWebapp : deploy ECS service
+Serverless ..> AwsBackend : deploy ECS service
+Serverless ..> ImageWorker : deploy Lambda
+Serverless ..> Rds : provision and wire
+Serverless ..> S3 : provision bucket and events
+Serverless ..> Secrets : bind runtime secrets
+Ecr --> AwsWebsite : container image
+Ecr --> AwsWebapp : container image
+Ecr --> AwsBackend : container image
+Alb --> AwsWebsite : host routing\nvectis-sense.ai
+Alb --> AwsWebapp : host routing\napp.vectis-sense.ai
+Alb --> AwsBackend : host routing\napi.vectis-sense.ai
+AwsBackend --> Rds : relational state
+AwsBackend --> S3 : image metadata + object access
+ImageWorker --> S3 : read new objects\nwrite derivatives
+ImageWorker --> AwsBackend : emit processed metadata
+Secrets --> AwsBackend : runtime secrets
+Secrets --> ImageWorker : worker secrets
+DevMachine --> PiRuntime : SSH deploy + LAN access
+DevMachine --> ProdAgent : SSH deploy
+ProdAgent --> PiRuntime : pull local stream
+ProdAgent --> AwsBackend : upload telemetry\nand media metadata
+ProdAgent --> S3 : upload image payloads
 
 note bottom of Shared
 Shared currently contains
 TypeScript contracts and
-seeded MVP fixtures.
+seeded MVP fixtures plus
+backend-facing resource types.
+end note
+
+note bottom of Serverless
+Serverless Framework definitions
+and helper scripts live under
+/cicd/serverless.
 end note
 
 @enduml

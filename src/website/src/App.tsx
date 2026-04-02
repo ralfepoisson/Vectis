@@ -24,9 +24,11 @@ export function App() {
       <header className="hero">
         <nav className="topbar">
           <div className="brand-lockup">
-            <div className="brand-mark" aria-hidden="true">
-              <span />
-            </div>
+            <img
+              className="brand-logo"
+              src="/vectis-logo-full-color.png"
+              alt="Vectis Intelligent Vision Platform"
+            />
             <div>
               <p className="brand-name">Vectis</p>
               <p className="brand-tagline">{platformOverview.tagline}</p>

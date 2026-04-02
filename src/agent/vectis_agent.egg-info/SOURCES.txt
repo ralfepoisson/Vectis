@@ -1,0 +1,11 @@
+pyproject.toml
+./agent/__init__.py
+tests/test_config.py
+tests/test_motion.py
+tests/test_queue.py
+vectis_agent.egg-info/PKG-INFO
+vectis_agent.egg-info/SOURCES.txt
+vectis_agent.egg-info/dependency_links.txt
+vectis_agent.egg-info/entry_points.txt
+vectis_agent.egg-info/requires.txt
+vectis_agent.egg-info/top_level.txt

@@ -6,11 +6,24 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/server.ts",
+    "db:create": "tsx scripts/ensure-postgres-database.ts",
+    "prisma:generate": "DATABASE_URL=\"${DATABASE_URL:-postgresql://postgres@localhost:5432/vectis_dev?schema=public}\" prisma generate --schema prisma/schema.prisma",
+    "prisma:migrate:deploy": "DATABASE_URL=\"${DATABASE_URL:-postgresql://postgres@localhost:5432/vectis_dev?schema=public}\" prisma migrate deploy --schema prisma/schema.prisma",
+    "prisma:migrate:dev": "DATABASE_URL=\"${DATABASE_URL:-postgresql://postgres@localhost:5432/vectis_dev?schema=public}\" prisma migrate dev --schema prisma/schema.prisma",
+    "db:setup": "npm run db:create && npm run prisma:generate && npm run prisma:migrate:deploy",
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1022.0",
     "@fastify/cors": "^11.1.0",
+    "@prisma/client": "^6.16.3",
     "@vectis/shared": "0.1.0",
-    "fastify": "^5.6.0"
+    "fastify": "^5.6.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0",
+    "pg": "^8.20.0",
+    "prisma": "^6.16.3"
   }
 }

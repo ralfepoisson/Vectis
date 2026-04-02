@@ -1,0 +1,19 @@
+services:
+  foundation:
+    path: foundation
+  website:
+    path: website
+    dependsOn:
+      - foundation
+  webapp:
+    path: webapp
+    dependsOn:
+      - foundation
+  backend:
+    path: backend
+    dependsOn:
+      - foundation
+  image-worker:
+    path: image-worker
+    dependsOn:
+      - foundation

@@ -1,5 +1,5 @@
 @startuml
-title Outdoor Camera Enclosure - Top View Layout
+title Outdoor Camera Prototype - Edge Streaming Layout
 
 skinparam shadowing false
 skinparam defaultTextAlignment center
@@ -17,9 +17,14 @@ rectangle "IP65 Outdoor Enclosure (Top View)" as Box {
   rectangle "Cable Gland\n(Ethernet Entry)" as Gland
 }
 
+rectangle "Vectis Agent" as Agent
+cloud "Vectis Cloud" as Cloud
+
 Front -down-> Camera
 Camera -down-> Pi
 Gland -up-> Splitter
 Splitter -left-> Pi
+Pi --> Agent : HTTP MPEG-TS stream
+Agent --> Cloud : media relay\n+ structured events
 
 @enduml

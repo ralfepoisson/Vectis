@@ -1,0 +1,45 @@
+service: vectis-image-worker
+frameworkVersion: "4"
+
+provider:
+  name: aws
+  region: ${opt:region, env:AWS_REGION, 'eu-west-3'}
+  runtime: python3.11
+  stage: ${opt:stage, 'prod'}
+  stackName: ${param:stackPrefix}-${sls:stage}-image-worker
+  iam:
+    role:
+      statements:
+        - Action:
+            - s3:GetObject
+            - s3:HeadObject
+            - s3:PutObject
+          Effect: Allow
+          Resource:
+            - arn:aws:s3:::${param:imageBucketName}/*
+        - Action:
+            - s3:ListBucket
+          Effect: Allow
+          Resource:
+            - arn:aws:s3:::${param:imageBucketName}
+
+functions:
+  imageProcessor:
+    handler: src/handler.handler
+    memorySize: 512
+    timeout: 60
+    environment:
+      OUTPUT_PREFIX: processed/
+      SOURCE_PREFIX: raw/
+    events:
+      - s3:
+          bucket: ${param:imageBucketName}
+          event: s3:ObjectCreated:*
+          existing: true
+          rules:
+            - prefix: raw/
+
+params:
+  default:
+    stackPrefix: vectis
+    imageBucketName: ""
