@@ -150,4 +150,12 @@ cameras ||--o{ camera_frames
 automation_rules ||--o{ rule_executions
 vision_events ||--o{ rule_executions
 
+note right of tenant_users
+tenant_users are hydrated
+from validated Life2 JWT
+claims on authenticated
+web requests and write
+operations.
+end note
+
 @enduml

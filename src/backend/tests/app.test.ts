@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +10,21 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { buildApp } from "../src/app";
+
+function createLife2Token(payload: Record<string, unknown>, secret: string) {
+  const header = { alg: "HS256", typ: "JWT" };
+  const encode = (value: unknown) =>
+    Buffer.from(JSON.stringify(value))
+      .toString("base64url");
+
+  const encodedHeader = encode(header);
+  const encodedPayload = encode(payload);
+  const signature = createHmac("sha256", secret)
+    .update(`${encodedHeader}.${encodedPayload}`)
+    .digest("base64url");
+
+  return `${encodedHeader}.${encodedPayload}.${signature}`;
+}
 
 describe("Vectis backend", () => {
   const execFileAsync = promisify(execFile);
@@ -88,6 +104,68 @@ describe("Vectis backend", () => {
     expect(health.json()).toEqual({ status: "ok" });
     expect(overview.statusCode).toBe(200);
     expect(overview.json().overview.captureToAction).toHaveLength(5);
+  });
+
+  it("validates Life2 bearer tokens and derives tenant context from claims", async () => {
+    const secret = "vectis-shared-secret";
+    const originalSecret = process.env.LIFE2_AUTH_SHARED_SECRET;
+    process.env.LIFE2_AUTH_SHARED_SECRET = secret;
+
+    const validToken = createLife2Token(
+      {
+        sub: "user-jwt",
+        accountId: "tenant-jwt",
+        displayName: "JWT User",
+        email: "jwt@example.com",
+        iss: "life2.ralfe.me",
+        aud: "account",
+        exp: Math.floor(Date.now() / 1000) + 3600
+      },
+      secret
+    );
+
+    const invalidToken = `${validToken.slice(0, -1)}x`;
+
+    try {
+      const unauthorizedResponse = await app.inject({
+        method: "GET",
+        url: "/api/v1/premises",
+        headers: {
+          authorization: `Bearer ${invalidToken}`
+        }
+      });
+
+      expect(unauthorizedResponse.statusCode).toBe(401);
+
+      const authorizedCreateResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/premises",
+        headers: {
+          authorization: `Bearer ${validToken}`
+        },
+        payload: {
+          name: "JWT Premises",
+          type: "office",
+          addressLine1: "1 Auth Way",
+          city: "Paris",
+          postalCode: "75001",
+          countryCode: "FR"
+        }
+      });
+
+      expect(authorizedCreateResponse.statusCode).toBe(201);
+      expect(authorizedCreateResponse.json().premises).toMatchObject({
+        tenantId: "tenant-jwt",
+        createdByUserId: "user-jwt",
+        name: "JWT Premises"
+      });
+    } finally {
+      if (originalSecret === undefined) {
+        delete process.env.LIFE2_AUTH_SHARED_SECRET;
+      } else {
+        process.env.LIFE2_AUTH_SHARED_SECRET = originalSecret;
+      }
+    }
   });
 
   it("creates, lists, updates, and deletes tenant-scoped premises", async () => {

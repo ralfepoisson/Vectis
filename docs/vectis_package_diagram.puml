@@ -38,6 +38,10 @@ cloud "AWS Production" {
   component "Application Load Balancer" as Alb
 }
 
+cloud "Life2 Platform" {
+  component "auth-service" as AuthService
+}
+
 node "Home LAN" {
   node "Raspberry Pi" {
     component "pi-camera service" as PiRuntime
@@ -52,6 +56,9 @@ Webapp ..> Shared : types and seeded data
 Backend ..> Shared : contracts and sample resources
 
 Webapp --> Backend : REST /api/v1
+Webapp --> AuthService : browser handoff\n/signIn + callback token
+AuthService --> Webapp : redirect with Life2 JWT
+Backend --> AuthService : shared JWT contract\nissuer/audience/secret
 Agent --> PiCamera : pull HTTP MPEG-TS stream
 Agent --> Backend : HTTPS uploads\npreview, motion, telemetry
 Agent --> LocalQueue : persist outbound payloads\nand retry state
@@ -85,8 +92,16 @@ ProdAgent --> S3 : upload image payloads
 note bottom of Shared
 Shared currently contains
 TypeScript contracts and
-seeded MVP fixtures plus
-backend-facing resource types.
+resource types consumed by
+the authenticated webapp
+and backend.
+end note
+
+note right of AuthService
+Life2 auth-service owns
+the hosted sign-in UX and
+issues Life2 JWTs used by
+Vectis.
 end note
 
 note bottom of Serverless
