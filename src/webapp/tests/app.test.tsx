@@ -22,6 +22,15 @@ function createLife2Token(payload: Record<string, unknown>) {
   return `${encode(header)}.${encode(payload)}.signature`;
 }
 
+function seedConfig() {
+  (window as Window & { __VECTIS_CONFIG__?: unknown }).__VECTIS_CONFIG__ = {
+    apiBaseUrl: "https://api.vectis.test/api/v1",
+    authServiceSignInUrl: "https://auth.life-sqrd.com/signIn",
+    authServiceApplicationId: "0ccc6f76-09c4-4a8c-3bbf-ee097174ffe8",
+    appBaseUrl: "http://localhost:4174"
+  };
+}
+
 describe("Vectis webapp", () => {
   const originalFetch = global.fetch;
   const originalConfig = (window as Window & { __VECTIS_CONFIG__?: unknown }).__VECTIS_CONFIG__;
@@ -29,12 +38,7 @@ describe("Vectis webapp", () => {
   beforeEach(() => {
     localStorage.clear();
     window.history.replaceState({}, "", "/");
-    (window as Window & { __VECTIS_CONFIG__?: unknown }).__VECTIS_CONFIG__ = {
-      apiBaseUrl: "https://api.vectis.test/api/v1",
-      authServiceSignInUrl: "https://auth.life-sqrd.com/signIn",
-      authServiceApplicationId: "0ccc6f76-09c4-4a8c-3bbf-ee097174ffe8",
-      appBaseUrl: "http://localhost:4174"
-    };
+    seedConfig();
   });
 
   afterEach(() => {
@@ -57,74 +61,48 @@ describe("Vectis webapp", () => {
       })
     ).toBeInTheDocument();
 
-    const signInLink = screen.getByRole("link", { name: /sign in with life2/i });
-    expect(signInLink).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /sign in with life2/i })).toHaveAttribute(
       "href",
       "https://auth.life-sqrd.com/signIn?applicationId=0ccc6f76-09c4-4a8c-3bbf-ee097174ffe8&redirect=http%3A%2F%2Flocalhost%3A4174%2Fauth%2Fcallback"
     );
   });
 
-  it("captures a callback token, restores the session, and loads premises", async () => {
+  it("shows the top navigation and admin menu for an admin user", async () => {
     const token = createLife2Token({
       sub: "user-123",
       accountId: "tenant-123",
       displayName: "Jane Doe",
       email: "jane@example.com",
+      role: "admin",
       exp: Math.floor(new Date("2026-04-09T10:00:00.000Z").getTime() / 1000)
     });
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    localStorage.setItem("vectis.auth.token", token);
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
       if (url.endsWith("/premises")) {
-        return jsonResponse({
-          items: [
-            {
-              id: "prem-1",
-              tenantId: "tenant-123",
-              name: "North Plant",
-              type: "factory",
-              addressLine1: "12 Industry Way",
-              addressLine2: null,
-              city: "Grenoble",
-              state: null,
-              postalCode: "38000",
-              countryCode: "FR",
-              notes: null,
-              createdByUserId: "user-123",
-              updatedByUserId: null,
-              createdAt: fixedNow.toISOString(),
-              updatedAt: fixedNow.toISOString()
-            }
-          ]
-        });
+        return jsonResponse({ items: [] });
       }
 
       if (url.endsWith("/agents")) {
         return jsonResponse({ items: [] });
       }
 
-      if (url.endsWith("/premises/prem-1/cameras")) {
-        return jsonResponse({ items: [] });
-      }
-
       throw new Error(`Unexpected fetch ${url}`);
-    });
-
-    global.fetch = fetchMock as typeof global.fetch;
-    window.history.replaceState({}, "", `/auth/callback?token=${token}`);
+    }) as typeof global.fetch;
 
     render(<App />);
 
-    await screen.findByRole("heading", { name: /create premises/i });
-
-    expect(screen.getAllByText(/north plant/i).length).toBeGreaterThan(0);
-    expect(localStorage.getItem("vectis.auth.token")).toBe(token);
-    expect(window.location.pathname).toBe("/");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(await screen.findByRole("button", { name: /^home$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^premises$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^configuration$/i })).toBeInTheDocument();
+    expect(screen.getByText(/^admin$/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /jane doe/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
   });
 
-  it("creates, updates, and deletes premises, cameras, and agents from the UI", async () => {
+  it("creates records in modals and edits the selected record in the main content area", async () => {
     const token = createLife2Token({
       sub: "user-123",
       accountId: "tenant-123",
@@ -262,33 +240,10 @@ describe("Vectis webapp", () => {
         return jsonResponse({ camera: created }, 201);
       }
 
-      if (url.endsWith("/agents/agent-1") && method === "PATCH") {
+      if (url.endsWith("/premises/prem-1") && method === "PATCH") {
         const payload = JSON.parse(String(init?.body));
-        agents[0] = { ...agents[0], ...payload };
-        return jsonResponse({ agent: agents[0] });
-      }
-
-      if (url.endsWith("/premises/prem-1/cameras/cam-1") && method === "PATCH") {
-        const payload = JSON.parse(String(init?.body));
-        const updated = { ...(camerasByPremises.get("prem-1") ?? [])[0], ...payload };
-        camerasByPremises.set("prem-1", [
-          updated,
-          ...((camerasByPremises.get("prem-1") ?? []).slice(1))
-        ]);
-        return jsonResponse({ camera: updated });
-      }
-
-      if (url.endsWith("/agents/agent-1") && method === "DELETE") {
-        agents.splice(0, 1);
-        return new Response(null, { status: 204 });
-      }
-
-      if (url.endsWith("/premises/prem-1/cameras/cam-1") && method === "DELETE") {
-        camerasByPremises.set(
-          "prem-1",
-          (camerasByPremises.get("prem-1") ?? []).filter((camera) => camera.id !== "cam-1")
-        );
-        return new Response(null, { status: 204 });
+        premises[0] = { ...premises[0], ...payload };
+        return jsonResponse({ premises: premises[0] });
       }
 
       throw new Error(`Unexpected fetch ${method} ${url}`);
@@ -298,88 +253,76 @@ describe("Vectis webapp", () => {
 
     render(<App />);
 
-    await screen.findByRole("button", { name: /north plant/i });
+    expect(await screen.findByRole("heading", { name: /edit premises/i })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText(/premises name/i), {
+    expect(screen.queryByRole("dialog", { name: /create premises/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ premises/i }));
+    const premisesDialog = await screen.findByRole("dialog", { name: /create premises/i });
+    fireEvent.change(within(premisesDialog).getByLabelText(/premises name/i), {
       target: { value: "South Depot" }
     });
-    fireEvent.change(screen.getByLabelText(/premises type/i), {
+    fireEvent.change(within(premisesDialog).getByLabelText(/premises type/i), {
       target: { value: "warehouse" }
     });
-    fireEvent.change(screen.getByLabelText(/address line 1/i), {
+    fireEvent.change(within(premisesDialog).getByLabelText(/address line 1/i), {
       target: { value: "42 Storage Park" }
     });
-    fireEvent.change(screen.getByLabelText(/^city$/i), {
+    fireEvent.change(within(premisesDialog).getByLabelText(/^city$/i), {
       target: { value: "Lille" }
     });
-    fireEvent.change(screen.getByLabelText(/country code/i), {
+    fireEvent.change(within(premisesDialog).getByLabelText(/country code/i), {
       target: { value: "FR" }
     });
-    fireEvent.click(screen.getByRole("button", { name: /create premises/i }));
+    fireEvent.click(within(premisesDialog).getByRole("button", { name: /create premises/i }));
 
-    await screen.findByRole("button", { name: /south depot/i });
+    expect(await screen.findByText(/premises created/i)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /south depot/i })).toBeInTheDocument();
 
-    const premisesCard = screen.getByRole("button", { name: /north plant/i });
-    fireEvent.click(premisesCard);
+    fireEvent.click(screen.getByRole("button", { name: /north plant/i }));
 
-    fireEvent.change(screen.getByLabelText(/agent name/i), {
+    fireEvent.click(screen.getByRole("button", { name: /\+ agent/i }));
+    const agentDialog = await screen.findByRole("dialog", { name: /create agent/i });
+    fireEvent.change(within(agentDialog).getByLabelText(/agent name/i), {
       target: { value: "Edge Node B" }
     });
-    fireEvent.change(screen.getByLabelText(/agent status/i), {
+    fireEvent.change(within(agentDialog).getByLabelText(/agent status/i), {
       target: { value: "maintenance" }
     });
-    fireEvent.change(screen.getByLabelText(/software version/i), {
+    fireEvent.change(within(agentDialog).getByLabelText(/software version/i), {
       target: { value: "1.5.0" }
     });
-    fireEvent.click(screen.getByRole("button", { name: /add agent/i }));
+    fireEvent.click(within(agentDialog).getByRole("button", { name: /create agent/i }));
 
-    await screen.findByText(/edge node b/i);
+    expect(await screen.findByText(/agent created/i)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /edge node b/i })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText(/camera name/i), {
+    fireEvent.click(screen.getByRole("button", { name: /\+ camera/i }));
+    const cameraDialog = await screen.findByRole("dialog", { name: /create camera/i });
+    fireEvent.change(within(cameraDialog).getByLabelText(/camera name/i), {
       target: { value: "Loading Bay Cam" }
     });
-    fireEvent.change(screen.getByLabelText(/stream url/i), {
+    fireEvent.change(within(cameraDialog).getByLabelText(/stream url/i), {
       target: { value: "https://streams.example.com/loading-bay" }
     });
-    fireEvent.change(screen.getByLabelText(/camera status/i), {
-      target: { value: "maintenance" }
+    fireEvent.click(within(cameraDialog).getByRole("button", { name: /create camera/i }));
+
+    expect(await screen.findByText(/camera created/i)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /loading bay cam/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /north plant/i }));
+    expect(await screen.findByRole("heading", { name: /edit premises/i })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/premises name/i), {
+      target: { value: "North Plant Prime" }
     });
-    fireEvent.click(screen.getByRole("button", { name: /add camera/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
-    await screen.findByText(/loading bay cam/i);
-
-    const existingAgent = screen.getByTestId("agent-agent-1");
-    fireEvent.click(within(existingAgent).getByRole("button", { name: /edit/i }));
-    fireEvent.change(screen.getByLabelText(/agent name/i), {
-      target: { value: "Edge Node A Prime" }
-    });
-    fireEvent.change(screen.getByLabelText(/agent status/i), {
-      target: { value: "maintenance" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: /save agent/i }));
-
-    await screen.findByText(/edge node a prime/i);
-
-    const existingCamera = screen.getByTestId("camera-cam-1");
-    fireEvent.click(within(existingCamera).getByRole("button", { name: /edit/i }));
-    fireEvent.change(screen.getByLabelText(/camera name/i), {
-      target: { value: "Gate Cam West" }
-    });
-    fireEvent.change(screen.getByLabelText(/camera status/i), {
-      target: { value: "offline" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: /save camera/i }));
-
-    await screen.findByText(/gate cam west/i);
-
-    fireEvent.click(within(screen.getByTestId("agent-agent-1")).getByRole("button", { name: /remove/i }));
-    await waitFor(() => expect(screen.queryByText(/edge node a prime/i)).not.toBeInTheDocument());
-
-    fireEvent.click(within(screen.getByTestId("camera-cam-1")).getByRole("button", { name: /remove/i }));
-    await waitFor(() => expect(screen.queryByText(/gate cam west/i)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/changes saved/i)).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /north plant prime/i })).toBeInTheDocument();
   });
 
-  it("shows a helpful error when the API base URL returns html instead of json", async () => {
+  it("shows toast notifications for api errors instead of inline errors", async () => {
     const token = createLife2Token({
       sub: "user-123",
       accountId: "tenant-123",
@@ -396,10 +339,13 @@ describe("Vectis webapp", () => {
       });
     }) as typeof global.fetch;
 
-    render(<App />);
+    const { container } = render(<App />);
 
     expect(
-      await screen.findByText(/expected json but received html/i)
-    ).toBeInTheDocument();
+      await screen.findByRole("status", {
+        name: /notification center/i
+      })
+    ).toHaveTextContent(/expected json but received html/i);
+    expect(container.querySelector(".error-banner")).toBeNull();
   });
 });

@@ -563,6 +563,111 @@ describe("Vectis backend", () => {
     expect(cameraLookupResponse.json().camera.status).toBe("degraded");
   });
 
+  it("returns runtime configuration for an agent including premises cameras", async () => {
+    const premisesResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/premises",
+      headers: {
+        "x-tenant-id": "tenant-runtime",
+        "x-user-id": "user-runtime"
+      },
+      payload: {
+        name: "Runtime Site",
+        type: "warehouse",
+        addressLine1: "15 Dock Road",
+        city: "Marseille",
+        postalCode: "13002",
+        countryCode: "FR"
+      }
+    });
+
+    const premisesId = premisesResponse.json().premises.id as string;
+
+    const cameraOneResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/premises/${premisesId}/cameras`,
+      headers: {
+        "x-tenant-id": "tenant-runtime",
+        "x-user-id": "user-runtime"
+      },
+      payload: {
+        name: "North Camera",
+        streamUrl: "http://192.168.1.10:8080/stream"
+      }
+    });
+
+    const cameraTwoResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/premises/${premisesId}/cameras`,
+      headers: {
+        "x-tenant-id": "tenant-runtime",
+        "x-user-id": "user-runtime"
+      },
+      payload: {
+        name: "South Camera",
+        streamUrl: "http://192.168.1.11:8080/stream"
+      }
+    });
+
+    const agentResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/agents",
+      headers: {
+        "x-tenant-id": "tenant-runtime",
+        "x-user-id": "user-runtime"
+      },
+      payload: {
+        premisesId,
+        name: "Runtime Agent",
+        status: "online",
+        softwareVersion: "0.1.0"
+      }
+    });
+
+    const agentId = agentResponse.json().agent.id as string;
+
+    const runtimeConfigResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/agents/${agentId}/runtime-config`,
+      headers: {
+        "x-tenant-id": "tenant-runtime"
+      }
+    });
+
+    expect(runtimeConfigResponse.statusCode).toBe(200);
+    expect(runtimeConfigResponse.json()).toMatchObject({
+      runtimeConfig: {
+        agent: {
+          id: agentId,
+          premisesId,
+          name: "Runtime Agent",
+          softwareVersion: "0.1.0"
+        },
+        premises: {
+          id: premisesId,
+          name: "Runtime Site"
+        }
+      }
+    });
+    expect(runtimeConfigResponse.json().runtimeConfig.cameras).toEqual([
+      expect.objectContaining({
+        id: cameraOneResponse.json().camera.id,
+        name: "North Camera",
+        streamUrl: "http://192.168.1.10:8080/stream",
+        ipAddress: "192.168.1.10",
+        heartbeatUrl: "http://192.168.1.10:8080/heartbeat"
+      }),
+      expect.objectContaining({
+        id: cameraTwoResponse.json().camera.id,
+        name: "South Camera",
+        streamUrl: "http://192.168.1.11:8080/stream",
+        ipAddress: "192.168.1.11",
+        heartbeatUrl: "http://192.168.1.11:8080/heartbeat"
+      })
+    ]);
+    expect(runtimeConfigResponse.json().runtimeConfig.pollIntervalSeconds).toBe(600);
+  });
+
   it("accepts multiple frames from an agent, stores files on disk, and records metadata", async () => {
     const premisesResponse = await app.inject({
       method: "POST",

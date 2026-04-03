@@ -1,11 +1,4 @@
-device_id: pi-lobby-01
-source_stream_id: lobby-main
-
-camera:
-  stream_url: http://192.168.1.50:8080/stream
-  heartbeat_url: http://192.168.1.50:8080/heartbeat
-  reconnect_delay_seconds: 5
-  connect_timeout_seconds: 10
+device_id: pi-gateway-01
 
 preview:
   interval_seconds: 2
@@ -34,12 +27,12 @@ backend:
   base_url: https://api.vectis-sense.ai
   tenant_id: tenant-demo
   agent_id: agent-demo
-  camera_id: camera-demo
   auth_token: change-me
   timeout_seconds: 20
   verify_tls: true
   retry_initial_delay_seconds: 2
   retry_max_delay_seconds: 60
+  config_refresh_seconds: 600
 
 queue:
   path: ./data/queue

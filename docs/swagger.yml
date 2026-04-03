@@ -413,6 +413,26 @@ paths:
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
           $ref: "#/components/responses/NotFoundResponse"
+  /api/v1/agents/{agentId}/runtime-config:
+    get:
+      tags:
+        - Agents
+      summary: Get agent runtime configuration and premises cameras
+      operationId: getAgentRuntimeConfig
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "200":
+          description: Agent runtime configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRuntimeConfigResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
   /api/v1/agents/{agentId}/camera-health:
     post:
       tags:
@@ -616,6 +636,13 @@ components:
       properties:
         agent:
           $ref: "#/components/schemas/Agent"
+    AgentRuntimeConfigResponse:
+      type: object
+      required:
+        - runtimeConfig
+      properties:
+        runtimeConfig:
+          $ref: "#/components/schemas/AgentRuntimeConfig"
     CameraHealthReportResponse:
       type: object
       required:
@@ -762,6 +789,77 @@ components:
         - online
         - offline
         - maintenance
+    AgentRuntimeConfig:
+      type: object
+      required:
+        - agent
+        - premises
+        - cameras
+        - pollIntervalSeconds
+      properties:
+        agent:
+          $ref: "#/components/schemas/Agent"
+        premises:
+          $ref: "#/components/schemas/AgentRuntimePremises"
+        cameras:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentRuntimeCamera"
+        pollIntervalSeconds:
+          type: integer
+          minimum: 60
+    AgentRuntimePremises:
+      type: object
+      required:
+        - id
+        - tenantId
+        - name
+        - type
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: "#/components/schemas/PremisesType"
+    AgentRuntimeCamera:
+      type: object
+      required:
+        - id
+        - tenantId
+        - premisesId
+        - name
+        - streamUrl
+        - status
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        premisesId:
+          type: string
+        name:
+          type: string
+        streamUrl:
+          type: string
+          format: uri
+        status:
+          $ref: "#/components/schemas/CameraStatus"
+        model:
+          type: string
+        serialNumber:
+          type: string
+        locationDescription:
+          type: string
+        ipAddress:
+          type: string
+          nullable: true
+        heartbeatUrl:
+          type: string
+          format: uri
+          nullable: true
     Premises:
       type: object
       required:

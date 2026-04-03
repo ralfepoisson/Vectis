@@ -43,7 +43,6 @@ class BackendSettings(BaseModel):
     base_url: str
     tenant_id: str
     agent_id: str
-    camera_id: str
     user_id: str | None = None
     auth_token: SecretStr | None = None
     api_key: SecretStr | None = None
@@ -51,6 +50,7 @@ class BackendSettings(BaseModel):
     verify_tls: bool = True
     retry_initial_delay_seconds: float = Field(default=2.0, ge=0.1)
     retry_max_delay_seconds: float = Field(default=60.0, ge=1.0)
+    config_refresh_seconds: float = Field(default=600.0, ge=60.0)
 
 
 class QueueSettings(BaseModel):
@@ -76,7 +76,7 @@ class LoggingSettings(BaseModel):
 class Settings(BaseModel):
     device_id: str
     source_stream_id: str = "camera-1"
-    camera: CameraSettings
+    camera: CameraSettings | None = None
     preview: PreviewSettings = PreviewSettings()
     motion: MotionSettings = MotionSettings()
     buffer: BufferSettings = BufferSettings()

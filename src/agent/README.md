@@ -2,7 +2,7 @@
 
 ## Architecture Summary
 
-This agent runs on the customer premises beside the Raspberry Pi camera service. In the current Vectis repo, that Pi service exposes an HTTP MPEG-TS stream on `/stream` and heartbeat data on `/heartbeat`, so the agent is implemented to consume those interfaces directly. It keeps a short ring buffer, emits low-rate preview frames continuously, and uses deterministic frame differencing to decide when to upload additional context for a motion event. The agent never runs AI inference locally. It only performs lightweight transport optimization and sends media plus telemetry to the cloud over outbound HTTPS.
+This agent runs on the customer premises beside the Raspberry Pi camera services. On install, it only needs backend connectivity plus its assigned `agentId`. At startup it fetches its runtime configuration from the backend, learns which cameras belong to its assigned premises, and then connects to those local streams. In the current Vectis repo, each Pi camera service exposes an HTTP MPEG-TS stream on `/stream` and heartbeat data on `/heartbeat`, so the agent is implemented to consume those interfaces directly. It keeps a short ring buffer per camera, emits low-rate preview frames continuously, and uses deterministic frame differencing to decide when to upload additional context for a motion event. The agent never runs AI inference locally. It only performs lightweight transport optimization and sends media plus telemetry to the cloud over outbound HTTPS.
 
 The runtime is split into a few replaceable parts:
 
@@ -40,6 +40,8 @@ src/agent/
 ## Responsibilities
 
 - Consume a local camera stream from the Pi camera service
+- Bootstrap camera assignments from the backend using the installed `agentId`
+- Refresh backend runtime configuration every 10 minutes by default
 - Read heartbeat data from the Pi camera service when available
 - Produce low-rate preview JPEGs with device and stream metadata
 - Detect motion without classifying it
@@ -112,9 +114,12 @@ The implementation is aligned to the current repository interfaces:
   - `GET /stream` returns `video/mp2t` MPEG-TS over HTTP
   - `GET /heartbeat` returns `ipAddresses`, `uptimeSeconds`, and `temperatureCelsius`
 - Backend ingest:
+  - `GET /api/v1/agents/{agentId}/runtime-config`
   - `POST /api/v1/agents/{agentId}/camera-health`
   - `POST /api/v1/agents/{agentId}/frames`
   - requests require tenant context through `x-tenant-id` or a bearer token with tenant claims
+
+The runtime config endpoint returns the agent assignment plus the list of premises cameras and their stream URLs. The agent polls this configuration periodically, defaulting to every `600` seconds.
 
 ## Backend Payloads
 
@@ -124,7 +129,7 @@ Preview and motion uploads are sent to the backend as JSON in the documented `In
 {
   "frames": [
     {
-      "cameraId": "camera-demo",
+      "cameraId": "camera-from-runtime-config",
       "timestamp": "2026-04-02T10:15:00.000Z",
       "contentType": "image/jpeg",
       "dataBase64": "..."
@@ -137,7 +142,7 @@ Camera health uploads are sent in the documented `CreateCameraHealthReportReques
 
 ```json
 {
-  "cameraId": "camera-demo",
+  "cameraId": "camera-from-runtime-config",
   "status": "online",
   "temperatureCelsius": 58.1,
   "uptimeSeconds": 7200,
@@ -155,10 +160,10 @@ Camera health uploads are sent in the documented `CreateCameraHealthReportReques
 ## Assumptions And Limitations
 
 - The first version uses OpenCV `VideoCapture`, which is simple and portable but not the most efficient HTTP MPEG-TS ingestion path for every Pi deployment.
-- The current backend contract only persists frames, not clips or event metadata, so motion uploads are sent as JPEG frame batches even when the local configuration asks for clip mode.
+- The current backend contract only persists frames, not clips or richer event objects, so motion uploads are sent as JPEG frame batches even when the local configuration asks for clip mode.
 - The ring buffer is in memory; the durable queue starts after media selection, not before frame capture.
 - Camera health telemetry is queued like other outbound traffic, so backend health status can lag while the backend is down.
-- No remote configuration pull channel is implemented yet; the agent is structured so a config-sync worker can be added later without rewriting the capture pipeline.
+- Backend-driven config refresh is implemented, but config push and secret rotation are not.
 
 ## Next Steps
 

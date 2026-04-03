@@ -2,9 +2,11 @@ import {
   AgentStatus,
   CameraStatus,
   Prisma,
+  PremisesType,
   type Agent,
   type CameraFrame,
   type CameraHealthReport,
+  type Premises,
   type PrismaClient
 } from "@prisma/client";
 
@@ -73,6 +75,25 @@ export class AgentsService {
     }
 
     return mapAgent(agent);
+  }
+
+  async getRuntimeConfig(tenantId: string, agentId: string) {
+    const agent = await assertAgentExists(this.prisma, tenantId, agentId);
+    const premises = await assertPremisesExists(this.prisma, tenantId, agent.premisesId);
+    const cameras = await this.prisma.camera.findMany({
+      where: {
+        tenantId,
+        premisesId: agent.premisesId
+      },
+      orderBy: { createdAt: "asc" }
+    });
+
+    return {
+      agent: mapAgent(agent),
+      premises: mapPremisesSummary(premises),
+      cameras: cameras.map(mapRuntimeCamera),
+      pollIntervalSeconds: 600
+    };
   }
 
   async createAgent(context: RequestContext, input: CreateAgentInput) {
@@ -192,14 +213,13 @@ async function assertPremisesExists(prisma: PrismaClient, tenantId: string, prem
       id: premisesId,
       tenantId
     },
-    select: {
-      id: true
-    }
   });
 
   if (!premises) {
     throw notFound("Premises not found.");
   }
+
+  return premises;
 }
 
 async function assertAgentExists(prisma: PrismaClient, tenantId: string, agentId: string) {
@@ -248,6 +268,76 @@ function mapAgent(agent: Agent) {
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString()
   };
+}
+
+function mapPremisesSummary(premises: Premises) {
+  return {
+    id: premises.id,
+    tenantId: premises.tenantId,
+    name: premises.name,
+    type: mapPremisesType(premises.type)
+  };
+}
+
+function mapRuntimeCamera(camera: {
+  id: string;
+  tenantId: string;
+  premisesId: string;
+  name: string;
+  streamUrl: string;
+  status: CameraStatus;
+  model: string | null;
+  serialNumber: string | null;
+  locationDescription: string | null;
+}) {
+  const derivedUrls = deriveCameraNetworkDetails(camera.streamUrl);
+  return {
+    id: camera.id,
+    tenantId: camera.tenantId,
+    premisesId: camera.premisesId,
+    name: camera.name,
+    streamUrl: camera.streamUrl,
+    status: cameraStatusFromDb[camera.status],
+    model: camera.model,
+    serialNumber: camera.serialNumber,
+    locationDescription: camera.locationDescription,
+    ipAddress: derivedUrls.ipAddress,
+    heartbeatUrl: derivedUrls.heartbeatUrl
+  };
+}
+
+function deriveCameraNetworkDetails(streamUrl: string) {
+  try {
+    const parsed = new URL(streamUrl);
+    const ipAddress = parsed.hostname;
+    let heartbeatUrl: string | null = null;
+    if ((parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.pathname === "/stream") {
+      parsed.pathname = "/heartbeat";
+      heartbeatUrl = parsed.toString();
+    }
+    return { ipAddress, heartbeatUrl };
+  } catch {
+    return { ipAddress: null, heartbeatUrl: null };
+  }
+}
+
+function mapPremisesType(type: PremisesType) {
+  switch (type) {
+    case PremisesType.APARTMENT:
+      return "apartment";
+    case PremisesType.FACTORY:
+      return "factory";
+    case PremisesType.HOUSE:
+      return "house";
+    case PremisesType.OFFICE:
+      return "office";
+    case PremisesType.OTHER:
+      return "other";
+    case PremisesType.RETAIL:
+      return "retail";
+    case PremisesType.WAREHOUSE:
+      return "warehouse";
+  }
 }
 
 function mapCameraHealthReport(report: CameraHealthReport) {

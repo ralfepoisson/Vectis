@@ -37,5 +37,10 @@ class HttpUploader:
         response = self._client.post(endpoint, json=payload)
         response.raise_for_status()
 
+    def get_json(self, endpoint: str) -> dict[str, object]:
+        response = self._client.get(endpoint)
+        response.raise_for_status()
+        return response.json()
+
     def close(self) -> None:
         self._client.close()

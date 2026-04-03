@@ -4,6 +4,8 @@ export interface AuthSession {
   tenantId: string;
   displayName?: string;
   email?: string;
+  role?: string;
+  isAdmin: boolean;
   expiresAt: number;
 }
 
@@ -47,6 +49,7 @@ export function parseSession(token: string): AuthSession {
   const tenantId = readStringClaim(payload, ["accountId", "accountid", "tenantId", "tenantid"]);
   const displayName = readStringClaim(payload, ["displayName", "name"]);
   const email = readStringClaim(payload, ["email"]);
+  const role = readStringClaim(payload, ["role"]);
   const exp = payload.exp;
   const expiresAt = typeof exp === "number" ? exp * 1000 : Number.NaN;
 
@@ -64,6 +67,8 @@ export function parseSession(token: string): AuthSession {
     tenantId,
     displayName,
     email,
+    role,
+    isAdmin: role === "admin",
     expiresAt
   };
 }

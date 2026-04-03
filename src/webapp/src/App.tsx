@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { Agent, Premises, PremisesCamera } from "@vectis/shared";
 
 import { clearStoredSession, getStoredSession, storeSession, type AuthSession } from "./auth";
@@ -6,6 +6,12 @@ import { getRuntimeConfig } from "./config";
 
 interface ApiError extends Error {
   status?: number;
+}
+
+interface Toast {
+  id: number;
+  tone: "success" | "error";
+  message: string;
 }
 
 interface PremisesDraft {
@@ -37,6 +43,18 @@ interface CameraDraft {
   serialNumber: string;
   locationDescription: string;
 }
+
+type Selection =
+  | { kind: "premises"; id: string }
+  | { kind: "agent"; id: string }
+  | { kind: "camera"; id: string }
+  | null;
+
+type ModalState =
+  | { kind: "premises" }
+  | { kind: "agent"; premisesId: string }
+  | { kind: "camera"; premisesId: string }
+  | null;
 
 const premisesTypes: Premises["type"][] = [
   "house",
@@ -70,6 +88,20 @@ function createEmptyPremisesDraft(): PremisesDraft {
   };
 }
 
+function createPremisesDraftFromEntity(entity: Premises): PremisesDraft {
+  return {
+    name: entity.name,
+    type: entity.type,
+    addressLine1: entity.addressLine1,
+    addressLine2: entity.addressLine2 ?? "",
+    city: entity.city,
+    state: entity.state ?? "",
+    postalCode: entity.postalCode ?? "",
+    countryCode: entity.countryCode,
+    notes: entity.notes ?? ""
+  };
+}
+
 function createEmptyAgentDraft(premisesId = ""): AgentDraft {
   return {
     premisesId,
@@ -78,6 +110,17 @@ function createEmptyAgentDraft(premisesId = ""): AgentDraft {
     softwareVersion: "",
     locationDescription: "",
     hostName: ""
+  };
+}
+
+function createAgentDraftFromEntity(entity: Agent): AgentDraft {
+  return {
+    premisesId: entity.premisesId,
+    name: entity.name,
+    status: entity.status,
+    softwareVersion: entity.softwareVersion ?? "",
+    locationDescription: entity.locationDescription ?? "",
+    hostName: entity.hostName ?? ""
   };
 }
 
@@ -92,13 +135,23 @@ function createEmptyCameraDraft(): CameraDraft {
   };
 }
 
-function isPresent(value: string) {
-  return value.trim().length > 0;
+function createCameraDraftFromEntity(entity: PremisesCamera): CameraDraft {
+  return {
+    name: entity.name,
+    streamUrl: entity.streamUrl,
+    status: entity.status,
+    model: entity.model ?? "",
+    serialNumber: entity.serialNumber ?? "",
+    locationDescription: entity.locationDescription ?? ""
+  };
 }
 
 function normalizeOptionalFields<T extends Record<string, string | undefined>>(payload: T) {
   return Object.fromEntries(
-    Object.entries(payload).map(([key, value]) => [key, value !== undefined && isPresent(value) ? value.trim() : undefined])
+    Object.entries(payload).map(([key, value]) => {
+      const trimmed = value?.trim();
+      return [key, trimmed ? trimmed : undefined];
+    })
   );
 }
 
@@ -126,7 +179,7 @@ async function apiRequest<T>(
         message = errorPayload.message;
       }
     } catch {
-      // Ignore response-body parsing failures for non-JSON or empty bodies.
+      // ignore JSON parse failures for error payloads
     }
 
     const error = new Error(message) as ApiError;
@@ -160,31 +213,435 @@ function buildSignInUrl() {
   return `${config.authServiceSignInUrl}?${params.toString()}`;
 }
 
+function ToastRegion({
+  toasts,
+  onDismiss
+}: {
+  toasts: Toast[];
+  onDismiss: (id: number) => void;
+}) {
+  return (
+    <div className="toast-region" role="status" aria-label="Notification center">
+      {toasts.map((toast) => (
+        <div key={toast.id} className={`toast toast-${toast.tone}`}>
+          <span>{toast.message}</span>
+          <button type="button" onClick={() => onDismiss(toast.id)} aria-label="Dismiss notification">
+            Close
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CreationModal({
+  modalState,
+  premisesDraft,
+  setPremisesDraft,
+  agentDraft,
+  setAgentDraft,
+  cameraDraft,
+  setCameraDraft,
+  onClose,
+  onSubmit
+}: {
+  modalState: ModalState;
+  premisesDraft: PremisesDraft;
+  setPremisesDraft: Dispatch<SetStateAction<PremisesDraft>>;
+  agentDraft: AgentDraft;
+  setAgentDraft: Dispatch<SetStateAction<AgentDraft>>;
+  cameraDraft: CameraDraft;
+  setCameraDraft: Dispatch<SetStateAction<CameraDraft>>;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  if (!modalState) {
+    return null;
+  }
+
+  const title =
+    modalState.kind === "premises"
+      ? "Create premises"
+      : modalState.kind === "agent"
+        ? "Create agent"
+        : "Create camera";
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="modal-header">
+          <div>
+            <p className="section-kicker">Create</p>
+            <h2>{title}</h2>
+          </div>
+          <button type="button" className="text-button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        {modalState.kind === "premises" ? (
+          <form
+            className="form-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSubmit();
+            }}
+          >
+            <label>
+              <span>Premises name</span>
+              <input
+                value={premisesDraft.name}
+                onChange={(event) =>
+                  setPremisesDraft((current) => ({ ...current, name: event.target.value }))
+                }
+                required
+              />
+            </label>
+            <label>
+              <span>Premises type</span>
+              <select
+                value={premisesDraft.type}
+                onChange={(event) =>
+                  setPremisesDraft((current) => ({
+                    ...current,
+                    type: event.target.value as Premises["type"]
+                  }))
+                }
+              >
+                {premisesTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-span-2">
+              <span>Address line 1</span>
+              <input
+                value={premisesDraft.addressLine1}
+                onChange={(event) =>
+                  setPremisesDraft((current) => ({ ...current, addressLine1: event.target.value }))
+                }
+                required
+              />
+            </label>
+            <label className="form-span-2">
+              <span>Address line 2</span>
+              <input
+                value={premisesDraft.addressLine2}
+                onChange={(event) =>
+                  setPremisesDraft((current) => ({ ...current, addressLine2: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              <span>City</span>
+              <input
+                value={premisesDraft.city}
+                onChange={(event) =>
+                  setPremisesDraft((current) => ({ ...current, city: event.target.value }))
+                }
+                required
+              />
+            </label>
+            <label>
+              <span>State</span>
+              <input
+                value={premisesDraft.state}
+                onChange={(event) =>
+                  setPremisesDraft((current) => ({ ...current, state: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              <span>Postal code</span>
+              <input
+                value={premisesDraft.postalCode}
+                onChange={(event) =>
+                  setPremisesDraft((current) => ({ ...current, postalCode: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              <span>Country code</span>
+              <input
+                value={premisesDraft.countryCode}
+                onChange={(event) =>
+                  setPremisesDraft((current) => ({ ...current, countryCode: event.target.value }))
+                }
+                maxLength={2}
+                required
+              />
+            </label>
+            <label className="form-span-2">
+              <span>Notes</span>
+              <textarea
+                rows={4}
+                value={premisesDraft.notes}
+                onChange={(event) =>
+                  setPremisesDraft((current) => ({ ...current, notes: event.target.value }))
+                }
+              />
+            </label>
+            <div className="modal-actions form-span-2">
+              <button className="primary-button" type="submit">
+                Create premises
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {modalState.kind === "agent" ? (
+          <form
+            className="form-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSubmit();
+            }}
+          >
+            <label>
+              <span>Agent name</span>
+              <input
+                value={agentDraft.name}
+                onChange={(event) =>
+                  setAgentDraft((current) => ({ ...current, name: event.target.value }))
+                }
+                required
+              />
+            </label>
+            <label>
+              <span>Agent status</span>
+              <select
+                value={agentDraft.status}
+                onChange={(event) =>
+                  setAgentDraft((current) => ({
+                    ...current,
+                    status: event.target.value as Agent["status"]
+                  }))
+                }
+              >
+                {agentStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Software version</span>
+              <input
+                value={agentDraft.softwareVersion}
+                onChange={(event) =>
+                  setAgentDraft((current) => ({
+                    ...current,
+                    softwareVersion: event.target.value
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span>Host name</span>
+              <input
+                value={agentDraft.hostName}
+                onChange={(event) =>
+                  setAgentDraft((current) => ({ ...current, hostName: event.target.value }))
+                }
+              />
+            </label>
+            <label className="form-span-2">
+              <span>Location description</span>
+              <input
+                value={agentDraft.locationDescription}
+                onChange={(event) =>
+                  setAgentDraft((current) => ({
+                    ...current,
+                    locationDescription: event.target.value
+                  }))
+                }
+              />
+            </label>
+            <div className="modal-actions form-span-2">
+              <button className="primary-button" type="submit">
+                Create agent
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {modalState.kind === "camera" ? (
+          <form
+            className="form-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSubmit();
+            }}
+          >
+            <label>
+              <span>Camera name</span>
+              <input
+                value={cameraDraft.name}
+                onChange={(event) =>
+                  setCameraDraft((current) => ({ ...current, name: event.target.value }))
+                }
+                required
+              />
+            </label>
+            <label>
+              <span>Camera status</span>
+              <select
+                value={cameraDraft.status}
+                onChange={(event) =>
+                  setCameraDraft((current) => ({
+                    ...current,
+                    status: event.target.value as PremisesCamera["status"]
+                  }))
+                }
+              >
+                {cameraStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-span-2">
+              <span>Stream URL</span>
+              <input
+                value={cameraDraft.streamUrl}
+                onChange={(event) =>
+                  setCameraDraft((current) => ({ ...current, streamUrl: event.target.value }))
+                }
+                required
+              />
+            </label>
+            <label>
+              <span>Model</span>
+              <input
+                value={cameraDraft.model}
+                onChange={(event) =>
+                  setCameraDraft((current) => ({ ...current, model: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              <span>Serial number</span>
+              <input
+                value={cameraDraft.serialNumber}
+                onChange={(event) =>
+                  setCameraDraft((current) => ({ ...current, serialNumber: event.target.value }))
+                }
+              />
+            </label>
+            <label className="form-span-2">
+              <span>Location description</span>
+              <input
+                value={cameraDraft.locationDescription}
+                onChange={(event) =>
+                  setCameraDraft((current) => ({
+                    ...current,
+                    locationDescription: event.target.value
+                  }))
+                }
+              />
+            </label>
+            <div className="modal-actions form-span-2">
+              <button className="primary-button" type="submit">
+                Create camera
+              </button>
+            </div>
+          </form>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AuthGate({ error }: { error: string | null }) {
+  return (
+    <div className="auth-shell">
+      <section className="auth-card">
+        <img src="/vectis-logo-full-color.png" alt="Vectis" className="brand-mark" />
+        <p className="section-kicker">Life2 secured workspace</p>
+        <h1>Secure operations for distributed sites</h1>
+        <p className="section-copy">
+          Sign in with the hosted Life2 auth flow to manage premises, field agents, and cameras.
+        </p>
+        {error ? <p className="auth-copy">{error}</p> : null}
+        <a className="primary-button button-link" href={buildSignInUrl()}>
+          Sign in with Life2
+        </a>
+      </section>
+    </div>
+  );
+}
+
 export function App() {
   const [session, setSession] = useState<AuthSession | null>(() => getStoredSession());
   const [premises, setPremises] = useState<Premises[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [camerasByPremises, setCamerasByPremises] = useState<Record<string, PremisesCamera[]>>({});
-  const [selectedPremisesId, setSelectedPremisesId] = useState<string>("");
+  const [selection, setSelection] = useState<Selection>(null);
+  const [activePage, setActivePage] = useState<"home" | "premises" | "configuration">("premises");
+  const [modalState, setModalState] = useState<ModalState>(null);
   const [premisesDraft, setPremisesDraft] = useState(createEmptyPremisesDraft());
-  const [premisesEditId, setPremisesEditId] = useState<string | null>(null);
   const [agentDraft, setAgentDraft] = useState(createEmptyAgentDraft());
-  const [agentEditId, setAgentEditId] = useState<string | null>(null);
   const [cameraDraft, setCameraDraft] = useState(createEmptyCameraDraft());
-  const [cameraEditId, setCameraEditId] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>("");
-  const [busyMessage, setBusyMessage] = useState<string>("");
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  const selectedPremises = useMemo(
-    () => premises.find((item) => item.id === selectedPremisesId) ?? null,
-    [premises, selectedPremisesId]
-  );
+  const selectedPremises = useMemo(() => {
+    if (selection?.kind === "premises") {
+      return premises.find((item) => item.id === selection.id) ?? null;
+    }
+
+    if (selection?.kind === "agent") {
+      const agent = agents.find((item) => item.id === selection.id);
+      return agent ? premises.find((item) => item.id === agent.premisesId) ?? null : null;
+    }
+
+    if (selection?.kind === "camera") {
+      const camera = Object.values(camerasByPremises)
+        .flat()
+        .find((item) => item.id === selection.id);
+      return camera ? premises.find((item) => item.id === camera.premisesId) ?? null : null;
+    }
+
+    return premises[0] ?? null;
+  }, [agents, camerasByPremises, premises, selection]);
+
   const selectedAgents = useMemo(
-    () => agents.filter((item) => item.premisesId === selectedPremisesId),
-    [agents, selectedPremisesId]
+    () => agents.filter((item) => item.premisesId === selectedPremises?.id),
+    [agents, selectedPremises]
   );
-  const selectedCameras = camerasByPremises[selectedPremisesId] ?? [];
+
+  const selectedCameras = useMemo(
+    () => (selectedPremises ? camerasByPremises[selectedPremises.id] ?? [] : []),
+    [camerasByPremises, selectedPremises]
+  );
+
+  const selectedAgent = selection?.kind === "agent"
+    ? agents.find((item) => item.id === selection.id) ?? null
+    : null;
+  const selectedCamera = selection?.kind === "camera"
+    ? Object.values(camerasByPremises)
+        .flat()
+        .find((item) => item.id === selection.id) ?? null
+    : null;
+
+  const editorKind = selection?.kind ?? (selectedPremises ? "premises" : null);
+
+  function pushToast(tone: Toast["tone"], message: string) {
+    const id = Date.now() + Math.random();
+    setToasts((current) => [...current, { id, tone, message }]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 4000);
+  }
+
+  function dismissToast(id: number) {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -197,14 +654,14 @@ export function App() {
     try {
       const restoredSession = storeSession(token);
       setSession(restoredSession);
-      setError("");
+      setAuthError(null);
       url.searchParams.delete("token");
       const nextPath = url.pathname === "/auth/callback" ? "/" : `${url.pathname}${url.search}`;
-      window.history.replaceState({}, "", nextPath === "" ? "/" : nextPath);
-    } catch (sessionError) {
+      window.history.replaceState({}, "", nextPath || "/");
+    } catch (error) {
       clearStoredSession();
       setSession(null);
-      setError(sessionError instanceof Error ? sessionError.message : "Unable to restore the session.");
+      setAuthError(error instanceof Error ? error.message : "Unable to restore the session.");
       window.history.replaceState({}, "", "/");
     }
   }, []);
@@ -218,7 +675,6 @@ export function App() {
 
     async function load() {
       setLoading(true);
-      setError("");
 
       try {
         const [premisesResponse, agentsResponse] = await Promise.all([
@@ -226,13 +682,12 @@ export function App() {
           apiRequest<{ items: Agent[] }>(session, "/agents")
         ]);
 
-        const camerasEntries = await Promise.all(
+        const cameraEntries = await Promise.all(
           premisesResponse.items.map(async (item) => {
             const response = await apiRequest<{ items: PremisesCamera[] }>(
               session,
               `/premises/${item.id}/cameras`
             );
-
             return [item.id, response.items] as const;
           })
         );
@@ -243,23 +698,21 @@ export function App() {
 
         setPremises(premisesResponse.items);
         setAgents(agentsResponse.items);
-        setCamerasByPremises(Object.fromEntries(camerasEntries));
+        setCamerasByPremises(Object.fromEntries(cameraEntries));
 
-        const defaultPremisesId =
-          premisesResponse.items.find((item) => item.id === selectedPremisesId)?.id ??
-          premisesResponse.items[0]?.id ??
-          "";
-        setSelectedPremisesId(defaultPremisesId);
-        setAgentDraft((current) => createEmptyAgentDraft(defaultPremisesId || current.premisesId));
-      } catch (loadError) {
-        const typedError = loadError as ApiError;
+        const defaultSelection =
+          premisesResponse.items[0] ? { kind: "premises" as const, id: premisesResponse.items[0].id } : null;
+        setSelection((current) => current ?? defaultSelection);
+      } catch (error) {
+        const typedError = error as ApiError;
 
         if (typedError.status === 401) {
           clearStoredSession();
           setSession(null);
+          return;
         }
 
-        setError(typedError.message);
+        pushToast("error", typedError.message);
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -275,24 +728,35 @@ export function App() {
   }, [session]);
 
   useEffect(() => {
-    if (!selectedPremisesId) {
-      setAgentDraft(createEmptyAgentDraft(""));
-      return;
+    if (selection?.kind === "premises") {
+      const entity = premises.find((item) => item.id === selection.id);
+      if (entity) {
+        setPremisesDraft(createPremisesDraftFromEntity(entity));
+      }
     }
 
-    setAgentDraft((current) =>
-      current.premisesId === selectedPremisesId
-        ? current
-        : createEmptyAgentDraft(selectedPremisesId)
-    );
-  }, [selectedPremisesId]);
-
-  async function handlePremisesSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!session) {
-      return;
+    if (selection?.kind === "agent") {
+      const entity = agents.find((item) => item.id === selection.id);
+      if (entity) {
+        setAgentDraft(createAgentDraftFromEntity(entity));
+      }
     }
 
+    if (selection?.kind === "camera") {
+      const entity = Object.values(camerasByPremises)
+        .flat()
+        .find((item) => item.id === selection.id);
+      if (entity) {
+        setCameraDraft(createCameraDraftFromEntity(entity));
+      }
+    }
+  }, [agents, camerasByPremises, premises, selection]);
+
+  if (!session) {
+    return <AuthGate error={authError} />;
+  }
+
+  async function handleCreatePremises() {
     const payload = {
       name: premisesDraft.name.trim(),
       type: premisesDraft.type,
@@ -307,765 +771,697 @@ export function App() {
       })
     };
 
-    setBusyMessage(premisesEditId ? "Saving premises..." : "Creating premises...");
-    setError("");
+    try {
+      const response = await apiRequest<{ premises: Premises }>(session, "/premises", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      setPremises((current) => [...current, response.premises]);
+      setCamerasByPremises((current) => ({ ...current, [response.premises.id]: [] }));
+      setSelection({ kind: "premises", id: response.premises.id });
+      setPremisesDraft(createEmptyPremisesDraft());
+      setModalState(null);
+      pushToast("success", "Premises created");
+    } catch (error) {
+      pushToast("error", error instanceof Error ? error.message : "Unable to create premises.");
+    }
+  }
+
+  async function handleCreateAgent() {
+    if (!selectedPremises) {
+      return;
+    }
 
     try {
-      if (premisesEditId) {
+      const response = await apiRequest<{ agent: Agent }>(session, "/agents", {
+        method: "POST",
+        body: JSON.stringify({
+          premisesId: selectedPremises.id,
+          name: agentDraft.name.trim(),
+          status: agentDraft.status,
+          ...normalizeOptionalFields({
+            softwareVersion: agentDraft.softwareVersion,
+            locationDescription: agentDraft.locationDescription,
+            hostName: agentDraft.hostName
+          })
+        })
+      });
+      setAgents((current) => [...current, response.agent]);
+      setSelection({ kind: "agent", id: response.agent.id });
+      setAgentDraft(createEmptyAgentDraft(selectedPremises.id));
+      setModalState(null);
+      pushToast("success", "Agent created");
+    } catch (error) {
+      pushToast("error", error instanceof Error ? error.message : "Unable to create agent.");
+    }
+  }
+
+  async function handleCreateCamera() {
+    if (!selectedPremises) {
+      return;
+    }
+
+    try {
+      const response = await apiRequest<{ camera: PremisesCamera }>(
+        session,
+        `/premises/${selectedPremises.id}/cameras`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: cameraDraft.name.trim(),
+            streamUrl: cameraDraft.streamUrl.trim(),
+            status: cameraDraft.status,
+            ...normalizeOptionalFields({
+              model: cameraDraft.model,
+              serialNumber: cameraDraft.serialNumber,
+              locationDescription: cameraDraft.locationDescription
+            })
+          })
+        }
+      );
+      setCamerasByPremises((current) => ({
+        ...current,
+        [selectedPremises.id]: [...(current[selectedPremises.id] ?? []), response.camera]
+      }));
+      setSelection({ kind: "camera", id: response.camera.id });
+      setCameraDraft(createEmptyCameraDraft());
+      setModalState(null);
+      pushToast("success", "Camera created");
+    } catch (error) {
+      pushToast("error", error instanceof Error ? error.message : "Unable to create camera.");
+    }
+  }
+
+  async function handleSaveSelection() {
+    try {
+      if (selection?.kind === "premises" && selectedPremises) {
         const response = await apiRequest<{ premises: Premises }>(
           session,
-          `/premises/${premisesEditId}`,
+          `/premises/${selectedPremises.id}`,
           {
             method: "PATCH",
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+              name: premisesDraft.name.trim(),
+              type: premisesDraft.type,
+              addressLine1: premisesDraft.addressLine1.trim(),
+              city: premisesDraft.city.trim(),
+              countryCode: premisesDraft.countryCode.trim().toUpperCase(),
+              ...normalizeOptionalFields({
+                addressLine2: premisesDraft.addressLine2,
+                state: premisesDraft.state,
+                postalCode: premisesDraft.postalCode,
+                notes: premisesDraft.notes
+              })
+            })
           }
         );
         setPremises((current) =>
           current.map((item) => (item.id === response.premises.id ? response.premises : item))
         );
-      } else {
-        const response = await apiRequest<{ premises: Premises }>(session, "/premises", {
-          method: "POST",
-          body: JSON.stringify(payload)
-        });
-        setPremises((current) => [...current, response.premises]);
-        setSelectedPremisesId(response.premises.id);
-        setCamerasByPremises((current) => ({ ...current, [response.premises.id]: [] }));
       }
 
-      setPremisesDraft(createEmptyPremisesDraft());
-      setPremisesEditId(null);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Unable to save premises.");
-    } finally {
-      setBusyMessage("");
-    }
-  }
-
-  async function handleDeletePremises(premisesId: string) {
-    if (!session) {
-      return;
-    }
-
-    setBusyMessage("Removing premises...");
-    setError("");
-
-    try {
-      await apiRequest(session, `/premises/${premisesId}`, { method: "DELETE" });
-      setPremises((current) => current.filter((item) => item.id !== premisesId));
-      setAgents((current) => current.filter((item) => item.premisesId !== premisesId));
-      setCamerasByPremises((current) => {
-        const next = { ...current };
-        delete next[premisesId];
-        return next;
-      });
-      setSelectedPremisesId((current) => (current === premisesId ? "" : current));
-      if (premisesEditId === premisesId) {
-        setPremisesEditId(null);
-        setPremisesDraft(createEmptyPremisesDraft());
-      }
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Unable to remove premises.");
-    } finally {
-      setBusyMessage("");
-    }
-  }
-
-  async function handleAgentSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!session || !selectedPremisesId) {
-      return;
-    }
-
-    const payload = {
-      premisesId: selectedPremisesId,
-      name: agentDraft.name.trim(),
-      status: agentDraft.status,
-      ...normalizeOptionalFields({
-        softwareVersion: agentDraft.softwareVersion,
-        locationDescription: agentDraft.locationDescription,
-        hostName: agentDraft.hostName
-      })
-    };
-
-    setBusyMessage(agentEditId ? "Saving agent..." : "Adding agent...");
-    setError("");
-
-    try {
-      if (agentEditId) {
-        const response = await apiRequest<{ agent: Agent }>(session, `/agents/${agentEditId}`, {
+      if (selection?.kind === "agent" && selectedAgent) {
+        const response = await apiRequest<{ agent: Agent }>(session, `/agents/${selectedAgent.id}`, {
           method: "PATCH",
           body: JSON.stringify({
-            name: payload.name,
-            status: payload.status,
-            softwareVersion: payload.softwareVersion,
-            locationDescription: payload.locationDescription,
-            hostName: payload.hostName
+            name: agentDraft.name.trim(),
+            status: agentDraft.status,
+            ...normalizeOptionalFields({
+              softwareVersion: agentDraft.softwareVersion,
+              locationDescription: agentDraft.locationDescription,
+              hostName: agentDraft.hostName
+            })
           })
         });
         setAgents((current) =>
           current.map((item) => (item.id === response.agent.id ? response.agent : item))
         );
-      } else {
-        const response = await apiRequest<{ agent: Agent }>(session, "/agents", {
-          method: "POST",
-          body: JSON.stringify(payload)
-        });
-        setAgents((current) => [...current, response.agent]);
       }
 
-      setAgentDraft(createEmptyAgentDraft(selectedPremisesId));
-      setAgentEditId(null);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Unable to save agent.");
-    } finally {
-      setBusyMessage("");
-    }
-  }
-
-  async function handleDeleteAgent(agentId: string) {
-    if (!session) {
-      return;
-    }
-
-    setBusyMessage("Removing agent...");
-    setError("");
-
-    try {
-      await apiRequest(session, `/agents/${agentId}`, { method: "DELETE" });
-      setAgents((current) => current.filter((item) => item.id !== agentId));
-      if (agentEditId === agentId) {
-        setAgentEditId(null);
-        setAgentDraft(createEmptyAgentDraft(selectedPremisesId));
-      }
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Unable to remove agent.");
-    } finally {
-      setBusyMessage("");
-    }
-  }
-
-  async function handleCameraSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!session || !selectedPremisesId) {
-      return;
-    }
-
-    const payload = {
-      name: cameraDraft.name.trim(),
-      streamUrl: cameraDraft.streamUrl.trim(),
-      status: cameraDraft.status,
-      ...normalizeOptionalFields({
-        model: cameraDraft.model,
-        serialNumber: cameraDraft.serialNumber,
-        locationDescription: cameraDraft.locationDescription
-      })
-    };
-
-    setBusyMessage(cameraEditId ? "Saving camera..." : "Adding camera...");
-    setError("");
-
-    try {
-      if (cameraEditId) {
+      if (selection?.kind === "camera" && selectedCamera && selectedPremises) {
         const response = await apiRequest<{ camera: PremisesCamera }>(
           session,
-          `/premises/${selectedPremisesId}/cameras/${cameraEditId}`,
+          `/premises/${selectedPremises.id}/cameras/${selectedCamera.id}`,
           {
             method: "PATCH",
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+              name: cameraDraft.name.trim(),
+              streamUrl: cameraDraft.streamUrl.trim(),
+              status: cameraDraft.status,
+              ...normalizeOptionalFields({
+                model: cameraDraft.model,
+                serialNumber: cameraDraft.serialNumber,
+                locationDescription: cameraDraft.locationDescription
+              })
+            })
           }
         );
         setCamerasByPremises((current) => ({
           ...current,
-          [selectedPremisesId]: (current[selectedPremisesId] ?? []).map((item) =>
+          [selectedPremises.id]: (current[selectedPremises.id] ?? []).map((item) =>
             item.id === response.camera.id ? response.camera : item
           )
         }));
-      } else {
-        const response = await apiRequest<{ camera: PremisesCamera }>(
-          session,
-          `/premises/${selectedPremisesId}/cameras`,
-          {
-            method: "POST",
-            body: JSON.stringify(payload)
-          }
-        );
-        setCamerasByPremises((current) => ({
-          ...current,
-          [selectedPremisesId]: [...(current[selectedPremisesId] ?? []), response.camera]
-        }));
       }
 
-      setCameraDraft(createEmptyCameraDraft());
-      setCameraEditId(null);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Unable to save camera.");
-    } finally {
-      setBusyMessage("");
+      pushToast("success", "Changes saved");
+    } catch (error) {
+      pushToast("error", error instanceof Error ? error.message : "Unable to save changes.");
     }
   }
 
-  async function handleDeleteCamera(cameraId: string) {
-    if (!session || !selectedPremisesId) {
-      return;
-    }
-
-    setBusyMessage("Removing camera...");
-    setError("");
-
-    try {
-      await apiRequest(session, `/premises/${selectedPremisesId}/cameras/${cameraId}`, {
-        method: "DELETE"
-      });
-      setCamerasByPremises((current) => ({
-        ...current,
-        [selectedPremisesId]: (current[selectedPremisesId] ?? []).filter((item) => item.id !== cameraId)
-      }));
-      if (cameraEditId === cameraId) {
-        setCameraEditId(null);
-        setCameraDraft(createEmptyCameraDraft());
-      }
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Unable to remove camera.");
-    } finally {
-      setBusyMessage("");
-    }
-  }
-
-  function signOut() {
-    clearStoredSession();
-    setSession(null);
-    setPremises([]);
-    setAgents([]);
-    setCamerasByPremises({});
-    setSelectedPremisesId("");
-    setPremisesDraft(createEmptyPremisesDraft());
-    setAgentDraft(createEmptyAgentDraft());
-    setCameraDraft(createEmptyCameraDraft());
-  }
-
-  if (!session) {
-    return (
-      <div className="auth-shell">
-        <section className="auth-card">
-          <img src="/vectis-logo-full-color.png" alt="Vectis" className="brand-mark" />
-          <p className="eyebrow">Life2 secured workspace</p>
-          <h1>Secure operations for distributed sites</h1>
-          <p className="lead">
-            Sign in with the hosted Life2 auth flow, then manage premises and the field hardware attached to each site.
-          </p>
-          {error ? <p className="error-banner">{error}</p> : null}
-          <a className="primary-link" href={buildSignInUrl()}>
-            Sign in with Life2
-          </a>
-        </section>
-      </div>
-    );
-  }
+  const profileLabel = session.displayName ?? session.email ?? session.userId;
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div>
-          <img src="/vectis-logo-icon-color.png" alt="Vectis" className="sidebar-logo" />
-          <p className="eyebrow">Operations console</p>
-          <h1>Premises control</h1>
-          <p className="sidebar-copy">
-            Tenant: <strong>{session.tenantId}</strong>
-          </p>
-          <p className="sidebar-copy">
-            Operator: <strong>{session.displayName ?? session.email ?? session.userId}</strong>
-          </p>
+      <ToastRegion toasts={toasts} onDismiss={dismissToast} />
+
+      <CreationModal
+        modalState={modalState}
+        premisesDraft={premisesDraft}
+        setPremisesDraft={setPremisesDraft}
+        agentDraft={agentDraft}
+        setAgentDraft={setAgentDraft}
+        cameraDraft={cameraDraft}
+        setCameraDraft={setCameraDraft}
+        onClose={() => setModalState(null)}
+        onSubmit={() => {
+          if (modalState?.kind === "premises") {
+            void handleCreatePremises();
+          }
+          if (modalState?.kind === "agent") {
+            void handleCreateAgent();
+          }
+          if (modalState?.kind === "camera") {
+            void handleCreateCamera();
+          }
+        }}
+      />
+
+      <header className="top-nav">
+        <div className="brand-lockup">
+          <img src="/vectis-logo-icon-color.png" alt="Vectis" className="nav-logo" />
+          <span>Vectis</span>
         </div>
 
-        <div className="sidebar-stats">
-          <div className="stat-card">
-            <span>Premises</span>
-            <strong>{premises.length}</strong>
-          </div>
-          <div className="stat-card">
-            <span>Agents</span>
-            <strong>{agents.length}</strong>
-          </div>
-          <div className="stat-card">
-            <span>Cameras</span>
-            <strong>{Object.values(camerasByPremises).flat().length}</strong>
-          </div>
-        </div>
+        <nav className="nav-actions" aria-label="Main menu">
+          <button type="button" className={activePage === "home" ? "nav-pill active" : "nav-pill"} onClick={() => setActivePage("home")}>
+            Home
+          </button>
+          <button type="button" className={activePage === "premises" ? "nav-pill active" : "nav-pill"} onClick={() => setActivePage("premises")}>
+            Premises
+          </button>
+          <button type="button" className={activePage === "configuration" ? "nav-pill active" : "nav-pill"} onClick={() => setActivePage("configuration")}>
+            Configuration
+          </button>
+          {session.isAdmin ? (
+            <details className="nav-dropdown">
+              <summary className="nav-pill">Admin</summary>
+              <div className="dropdown-menu">
+                <button type="button">Users</button>
+                <button type="button">Audit</button>
+              </div>
+            </details>
+          ) : null}
+          <button type="button" className="nav-pill profile-pill">
+            {profileLabel}
+          </button>
+          <button
+            type="button"
+            className="nav-pill"
+            onClick={() => {
+              clearStoredSession();
+              setSession(null);
+            }}
+          >
+            Sign out
+          </button>
+        </nav>
+      </header>
 
-        <button className="ghost-button" type="button" onClick={signOut}>
-          Sign out
-        </button>
-      </aside>
-
-      <main className="workspace">
-        <section className="hero">
-          <div>
-            <p className="eyebrow">Deployment inventory</p>
-            <h2>Premises, agents, and cameras in one place</h2>
-            <p className="lead">
-              Start with a premises, then attach the agents and cameras that belong to that location.
+      {activePage !== "premises" ? (
+        <main className="placeholder-shell">
+          <section className="placeholder-card">
+            <p className="section-kicker">{activePage}</p>
+            <h1>{activePage === "home" ? "Home dashboard coming next" : "Configuration workspace coming next"}</h1>
+            <p className="section-copy">
+              The initial release is centered on premises, agents, and cameras. This section is reserved for the next iteration.
             </p>
-          </div>
-          <div className="hero-status">
-            <span>{loading ? "Refreshing data..." : "Data synced"}</span>
-            <strong>{busyMessage || "Ready for updates"}</strong>
-          </div>
-        </section>
-
-        {error ? <p className="error-banner">{error}</p> : null}
-
-        <section className="content-grid">
-          <article className="panel">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Premises</p>
-                <h3>{premisesEditId ? "Update premises" : "Create premises"}</h3>
-              </div>
+          </section>
+        </main>
+      ) : (
+        <main className="workspace">
+          <section className="workspace-header">
+            <div>
+              <p className="section-kicker">Premises management</p>
+              <h1>Sites, edge agents, and camera inventory</h1>
+              <p className="section-copy">
+                Select a premises on the left, inspect its hardware in the middle, and update the current record in the editor.
+              </p>
             </div>
-            <form className="form-grid" onSubmit={handlePremisesSubmit}>
-              <label>
-                <span>Premises name</span>
-                <input
-                  value={premisesDraft.name}
-                  onChange={(event) => setPremisesDraft((current) => ({ ...current, name: event.target.value }))}
-                  required
-                />
-              </label>
-              <label>
-                <span>Premises type</span>
-                <select
-                  value={premisesDraft.type}
-                  onChange={(event) =>
-                    setPremisesDraft((current) => ({
-                      ...current,
-                      type: event.target.value as Premises["type"]
-                    }))
-                  }
-                >
-                  {premisesTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="full-span">
-                <span>Address line 1</span>
-                <input
-                  value={premisesDraft.addressLine1}
-                  onChange={(event) =>
-                    setPremisesDraft((current) => ({ ...current, addressLine1: event.target.value }))
-                  }
-                  required
-                />
-              </label>
-              <label className="full-span">
-                <span>Address line 2</span>
-                <input
-                  value={premisesDraft.addressLine2}
-                  onChange={(event) =>
-                    setPremisesDraft((current) => ({ ...current, addressLine2: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                <span>City</span>
-                <input
-                  value={premisesDraft.city}
-                  onChange={(event) => setPremisesDraft((current) => ({ ...current, city: event.target.value }))}
-                  required
-                />
-              </label>
-              <label>
-                <span>State</span>
-                <input
-                  value={premisesDraft.state}
-                  onChange={(event) => setPremisesDraft((current) => ({ ...current, state: event.target.value }))}
-                />
-              </label>
-              <label>
-                <span>Postal code</span>
-                <input
-                  value={premisesDraft.postalCode}
-                  onChange={(event) =>
-                    setPremisesDraft((current) => ({ ...current, postalCode: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                <span>Country code</span>
-                <input
-                  value={premisesDraft.countryCode}
-                  onChange={(event) =>
-                    setPremisesDraft((current) => ({ ...current, countryCode: event.target.value }))
-                  }
-                  maxLength={2}
-                  required
-                />
-              </label>
-              <label className="full-span">
-                <span>Notes</span>
-                <textarea
-                  value={premisesDraft.notes}
-                  onChange={(event) => setPremisesDraft((current) => ({ ...current, notes: event.target.value }))}
-                  rows={3}
-                />
-              </label>
-              <div className="form-actions full-span">
-                <button className="primary-button" type="submit">
-                  {premisesEditId ? "Save premises" : "Create premises"}
-                </button>
-                {premisesEditId ? (
-                  <button
-                    className="ghost-button"
-                    type="button"
-                    onClick={() => {
-                      setPremisesEditId(null);
-                      setPremisesDraft(createEmptyPremisesDraft());
-                    }}
-                  >
-                    Cancel
-                  </button>
-                ) : null}
-              </div>
-            </form>
+            <div className="workspace-meta">
+              <span>{loading ? "Refreshing" : "Synced"}</span>
+              <strong>{selectedPremises?.name ?? "No premises selected"}</strong>
+            </div>
+          </section>
 
-            <div className="stack-list">
-              {premises.map((item) => (
-                <div key={item.id} className={`list-card ${item.id === selectedPremisesId ? "selected" : ""}`}>
-                  <button type="button" className="card-select" onClick={() => setSelectedPremisesId(item.id)}>
+          <section className="workspace-grid">
+            <aside className="panel rail-panel">
+              <div className="panel-head">
+                <div>
+                  <p className="section-kicker">Premises</p>
+                  <h2>All premises</h2>
+                </div>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => {
+                    setPremisesDraft(createEmptyPremisesDraft());
+                    setModalState({ kind: "premises" });
+                  }}
+                >
+                  + Premises
+                </button>
+              </div>
+
+              <div className="list-stack">
+                {premises.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={
+                      selection?.kind === "premises" && selection.id === item.id
+                        ? "list-item selected"
+                        : "list-item"
+                    }
+                    onClick={() => setSelection({ kind: "premises", id: item.id })}
+                  >
                     <span>{item.name}</span>
                     <small>
-                      {item.type} · {item.city}, {item.countryCode}
+                      {item.type} · {item.city}
                     </small>
                   </button>
-                  <div className="inline-actions">
-                    <button
-                      className="ghost-button"
-                      type="button"
-                      onClick={() => {
-                        setSelectedPremisesId(item.id);
-                        setPremisesEditId(item.id);
-                        setPremisesDraft({
-                          name: item.name,
-                          type: item.type,
-                          addressLine1: item.addressLine1,
-                          addressLine2: item.addressLine2 ?? "",
-                          city: item.city,
-                          state: item.state ?? "",
-                          postalCode: item.postalCode ?? "",
-                          countryCode: item.countryCode,
-                          notes: item.notes ?? ""
-                        });
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button className="danger-button" type="button" onClick={() => void handleDeletePremises(item.id)}>
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="panel detail-panel">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Selected premises</p>
-                <h3>{selectedPremises?.name ?? "Choose a premises"}</h3>
+                ))}
               </div>
-              {selectedPremises ? (
-                <span className="pill">
-                  {selectedAgents.length} agents · {selectedCameras.length} cameras
-                </span>
+            </aside>
+
+            <aside className="panel rail-panel">
+              <div className="panel-head">
+                <div>
+                  <p className="section-kicker">Assets</p>
+                  <h2>Agents and cameras</h2>
+                </div>
+              </div>
+
+              <div className="asset-group">
+                <div className="asset-group-head">
+                  <h3>Agents</h3>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={!selectedPremises}
+                    onClick={() => {
+                      if (!selectedPremises) {
+                        return;
+                      }
+                      setAgentDraft(createEmptyAgentDraft(selectedPremises.id));
+                      setModalState({ kind: "agent", premisesId: selectedPremises.id });
+                    }}
+                  >
+                    + Agent
+                  </button>
+                </div>
+
+                <div className="list-stack">
+                  {selectedAgents.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={
+                        selection?.kind === "agent" && selection.id === item.id
+                          ? "list-item selected"
+                          : "list-item"
+                      }
+                      onClick={() => setSelection({ kind: "agent", id: item.id })}
+                    >
+                      <span>{item.name}</span>
+                      <small>{item.status}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="asset-group">
+                <div className="asset-group-head">
+                  <h3>Cameras</h3>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={!selectedPremises}
+                    onClick={() => {
+                      if (!selectedPremises) {
+                        return;
+                      }
+                      setCameraDraft(createEmptyCameraDraft());
+                      setModalState({ kind: "camera", premisesId: selectedPremises.id });
+                    }}
+                  >
+                    + Camera
+                  </button>
+                </div>
+
+                <div className="list-stack">
+                  {selectedCameras.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={
+                        selection?.kind === "camera" && selection.id === item.id
+                          ? "list-item selected"
+                          : "list-item"
+                      }
+                      onClick={() => setSelection({ kind: "camera", id: item.id })}
+                    >
+                      <span>{item.name}</span>
+                      <small>{item.status}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </aside>
+
+            <section className="panel editor-panel">
+              {editorKind === "premises" && selectedPremises ? (
+                <>
+                  <div className="panel-head">
+                    <div>
+                      <p className="section-kicker">Editor</p>
+                      <h2>Edit premises</h2>
+                    </div>
+                  </div>
+
+                  <form
+                    className="form-grid"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void handleSaveSelection();
+                    }}
+                  >
+                    <label>
+                      <span>Premises name</span>
+                      <input
+                        value={premisesDraft.name}
+                        onChange={(event) =>
+                          setPremisesDraft((current) => ({ ...current, name: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Premises type</span>
+                      <select
+                        value={premisesDraft.type}
+                        onChange={(event) =>
+                          setPremisesDraft((current) => ({
+                            ...current,
+                            type: event.target.value as Premises["type"]
+                          }))
+                        }
+                      >
+                        {premisesTypes.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-span-2">
+                      <span>Address line 1</span>
+                      <input
+                        value={premisesDraft.addressLine1}
+                        onChange={(event) =>
+                          setPremisesDraft((current) => ({ ...current, addressLine1: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label className="form-span-2">
+                      <span>Address line 2</span>
+                      <input
+                        value={premisesDraft.addressLine2}
+                        onChange={(event) =>
+                          setPremisesDraft((current) => ({ ...current, addressLine2: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>City</span>
+                      <input
+                        value={premisesDraft.city}
+                        onChange={(event) =>
+                          setPremisesDraft((current) => ({ ...current, city: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>State</span>
+                      <input
+                        value={premisesDraft.state}
+                        onChange={(event) =>
+                          setPremisesDraft((current) => ({ ...current, state: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Postal code</span>
+                      <input
+                        value={premisesDraft.postalCode}
+                        onChange={(event) =>
+                          setPremisesDraft((current) => ({ ...current, postalCode: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Country code</span>
+                      <input
+                        value={premisesDraft.countryCode}
+                        onChange={(event) =>
+                          setPremisesDraft((current) => ({ ...current, countryCode: event.target.value }))
+                        }
+                        maxLength={2}
+                        required
+                      />
+                    </label>
+                    <label className="form-span-2">
+                      <span>Notes</span>
+                      <textarea
+                        rows={6}
+                        value={premisesDraft.notes}
+                        onChange={(event) =>
+                          setPremisesDraft((current) => ({ ...current, notes: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <div className="editor-actions form-span-2">
+                      <button className="primary-button" type="submit">
+                        Save changes
+                      </button>
+                    </div>
+                  </form>
+                </>
               ) : null}
-            </div>
 
-            {selectedPremises ? (
-              <>
-                <div className="detail-summary">
-                  <p>{selectedPremises.addressLine1}</p>
-                  <p>
-                    {selectedPremises.city}
-                    {selectedPremises.state ? `, ${selectedPremises.state}` : ""} {selectedPremises.postalCode ?? ""}
+              {editorKind === "agent" && selectedAgent ? (
+                <>
+                  <div className="panel-head">
+                    <div>
+                      <p className="section-kicker">Editor</p>
+                      <h2>Edit agent</h2>
+                    </div>
+                  </div>
+                  <form
+                    className="form-grid"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void handleSaveSelection();
+                    }}
+                  >
+                    <label>
+                      <span>Agent name</span>
+                      <input
+                        value={agentDraft.name}
+                        onChange={(event) =>
+                          setAgentDraft((current) => ({ ...current, name: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Agent status</span>
+                      <select
+                        value={agentDraft.status}
+                        onChange={(event) =>
+                          setAgentDraft((current) => ({
+                            ...current,
+                            status: event.target.value as Agent["status"]
+                          }))
+                        }
+                      >
+                        {agentStatuses.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Software version</span>
+                      <input
+                        value={agentDraft.softwareVersion}
+                        onChange={(event) =>
+                          setAgentDraft((current) => ({
+                            ...current,
+                            softwareVersion: event.target.value
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Host name</span>
+                      <input
+                        value={agentDraft.hostName}
+                        onChange={(event) =>
+                          setAgentDraft((current) => ({ ...current, hostName: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="form-span-2">
+                      <span>Location description</span>
+                      <input
+                        value={agentDraft.locationDescription}
+                        onChange={(event) =>
+                          setAgentDraft((current) => ({
+                            ...current,
+                            locationDescription: event.target.value
+                          }))
+                        }
+                      />
+                    </label>
+                    <div className="editor-actions form-span-2">
+                      <button className="primary-button" type="submit">
+                        Save changes
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : null}
+
+              {editorKind === "camera" && selectedCamera ? (
+                <>
+                  <div className="panel-head">
+                    <div>
+                      <p className="section-kicker">Editor</p>
+                      <h2>Edit camera</h2>
+                    </div>
+                  </div>
+                  <form
+                    className="form-grid"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void handleSaveSelection();
+                    }}
+                  >
+                    <label>
+                      <span>Camera name</span>
+                      <input
+                        value={cameraDraft.name}
+                        onChange={(event) =>
+                          setCameraDraft((current) => ({ ...current, name: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Camera status</span>
+                      <select
+                        value={cameraDraft.status}
+                        onChange={(event) =>
+                          setCameraDraft((current) => ({
+                            ...current,
+                            status: event.target.value as PremisesCamera["status"]
+                          }))
+                        }
+                      >
+                        {cameraStatuses.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-span-2">
+                      <span>Stream URL</span>
+                      <input
+                        value={cameraDraft.streamUrl}
+                        onChange={(event) =>
+                          setCameraDraft((current) => ({ ...current, streamUrl: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Model</span>
+                      <input
+                        value={cameraDraft.model}
+                        onChange={(event) =>
+                          setCameraDraft((current) => ({ ...current, model: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Serial number</span>
+                      <input
+                        value={cameraDraft.serialNumber}
+                        onChange={(event) =>
+                          setCameraDraft((current) => ({ ...current, serialNumber: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="form-span-2">
+                      <span>Location description</span>
+                      <input
+                        value={cameraDraft.locationDescription}
+                        onChange={(event) =>
+                          setCameraDraft((current) => ({
+                            ...current,
+                            locationDescription: event.target.value
+                          }))
+                        }
+                      />
+                    </label>
+                    <div className="editor-actions form-span-2">
+                      <button className="primary-button" type="submit">
+                        Save changes
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : null}
+
+              {!editorKind ? (
+                <div className="empty-editor">
+                  <p className="section-kicker">Editor</p>
+                  <h2>Select a record to edit</h2>
+                  <p className="section-copy">
+                    Use the left rail to choose a premises, then pick an agent or camera from the middle rail.
                   </p>
-                  {selectedPremises.notes ? <p>{selectedPremises.notes}</p> : null}
                 </div>
-
-                <div className="nested-grid">
-                  <section className="nested-panel">
-                    <div className="panel-header">
-                      <div>
-                        <p className="eyebrow">Agents</p>
-                        <h4>{agentEditId ? "Update agent" : "Add agent"}</h4>
-                      </div>
-                    </div>
-                    <form className="form-grid" onSubmit={handleAgentSubmit}>
-                      <label>
-                        <span>Agent name</span>
-                        <input
-                          value={agentDraft.name}
-                          onChange={(event) =>
-                            setAgentDraft((current) => ({ ...current, name: event.target.value }))
-                          }
-                          required
-                        />
-                      </label>
-                      <label>
-                        <span>Agent status</span>
-                        <select
-                          value={agentDraft.status}
-                          onChange={(event) =>
-                            setAgentDraft((current) => ({
-                              ...current,
-                              status: event.target.value as Agent["status"]
-                            }))
-                          }
-                        >
-                          {agentStatuses.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        <span>Software version</span>
-                        <input
-                          value={agentDraft.softwareVersion}
-                          onChange={(event) =>
-                            setAgentDraft((current) => ({
-                              ...current,
-                              softwareVersion: event.target.value
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        <span>Host name</span>
-                        <input
-                          value={agentDraft.hostName}
-                          onChange={(event) =>
-                            setAgentDraft((current) => ({ ...current, hostName: event.target.value }))
-                          }
-                        />
-                      </label>
-                      <label className="full-span">
-                        <span>Location description</span>
-                        <input
-                          value={agentDraft.locationDescription}
-                          onChange={(event) =>
-                            setAgentDraft((current) => ({
-                              ...current,
-                              locationDescription: event.target.value
-                            }))
-                          }
-                        />
-                      </label>
-                      <div className="form-actions full-span">
-                        <button className="primary-button" type="submit">
-                          {agentEditId ? "Save agent" : "Add agent"}
-                        </button>
-                        {agentEditId ? (
-                          <button
-                            className="ghost-button"
-                            type="button"
-                            onClick={() => {
-                              setAgentEditId(null);
-                              setAgentDraft(createEmptyAgentDraft(selectedPremisesId));
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        ) : null}
-                      </div>
-                    </form>
-
-                    <div className="stack-list">
-                      {selectedAgents.map((item) => (
-                        <div key={item.id} className="list-card compact" data-testid={`agent-${item.id}`}>
-                          <div>
-                            <span>{item.name}</span>
-                            <small>
-                              {item.status}
-                              {item.softwareVersion ? ` · ${item.softwareVersion}` : ""}
-                            </small>
-                          </div>
-                          <div className="inline-actions">
-                            <button
-                              className="ghost-button"
-                              type="button"
-                              onClick={() => {
-                                setAgentEditId(item.id);
-                                setAgentDraft({
-                                  premisesId: item.premisesId,
-                                  name: item.name,
-                                  status: item.status,
-                                  softwareVersion: item.softwareVersion ?? "",
-                                  locationDescription: item.locationDescription ?? "",
-                                  hostName: item.hostName ?? ""
-                                });
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button className="danger-button" type="button" onClick={() => void handleDeleteAgent(item.id)}>
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-
-                  <section className="nested-panel">
-                    <div className="panel-header">
-                      <div>
-                        <p className="eyebrow">Cameras</p>
-                        <h4>{cameraEditId ? "Update camera" : "Add camera"}</h4>
-                      </div>
-                    </div>
-                    <form className="form-grid" onSubmit={handleCameraSubmit}>
-                      <label>
-                        <span>Camera name</span>
-                        <input
-                          value={cameraDraft.name}
-                          onChange={(event) =>
-                            setCameraDraft((current) => ({ ...current, name: event.target.value }))
-                          }
-                          required
-                        />
-                      </label>
-                      <label>
-                        <span>Camera status</span>
-                        <select
-                          value={cameraDraft.status}
-                          onChange={(event) =>
-                            setCameraDraft((current) => ({
-                              ...current,
-                              status: event.target.value as PremisesCamera["status"]
-                            }))
-                          }
-                        >
-                          {cameraStatuses.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="full-span">
-                        <span>Stream URL</span>
-                        <input
-                          value={cameraDraft.streamUrl}
-                          onChange={(event) =>
-                            setCameraDraft((current) => ({
-                              ...current,
-                              streamUrl: event.target.value
-                            }))
-                          }
-                          required
-                        />
-                      </label>
-                      <label>
-                        <span>Model</span>
-                        <input
-                          value={cameraDraft.model}
-                          onChange={(event) =>
-                            setCameraDraft((current) => ({ ...current, model: event.target.value }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        <span>Serial number</span>
-                        <input
-                          value={cameraDraft.serialNumber}
-                          onChange={(event) =>
-                            setCameraDraft((current) => ({
-                              ...current,
-                              serialNumber: event.target.value
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="full-span">
-                        <span>Location description</span>
-                        <input
-                          value={cameraDraft.locationDescription}
-                          onChange={(event) =>
-                            setCameraDraft((current) => ({
-                              ...current,
-                              locationDescription: event.target.value
-                            }))
-                          }
-                        />
-                      </label>
-                      <div className="form-actions full-span">
-                        <button className="primary-button" type="submit">
-                          {cameraEditId ? "Save camera" : "Add camera"}
-                        </button>
-                        {cameraEditId ? (
-                          <button
-                            className="ghost-button"
-                            type="button"
-                            onClick={() => {
-                              setCameraEditId(null);
-                              setCameraDraft(createEmptyCameraDraft());
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        ) : null}
-                      </div>
-                    </form>
-
-                    <div className="stack-list">
-                      {selectedCameras.map((item) => (
-                        <div key={item.id} className="list-card compact" data-testid={`camera-${item.id}`}>
-                          <div>
-                            <span>{item.name}</span>
-                            <small>
-                              {item.status}
-                              {item.locationDescription ? ` · ${item.locationDescription}` : ""}
-                            </small>
-                          </div>
-                          <div className="inline-actions">
-                            <button
-                              className="ghost-button"
-                              type="button"
-                              onClick={() => {
-                                setCameraEditId(item.id);
-                                setCameraDraft({
-                                  name: item.name,
-                                  streamUrl: item.streamUrl,
-                                  status: item.status,
-                                  model: item.model ?? "",
-                                  serialNumber: item.serialNumber ?? "",
-                                  locationDescription: item.locationDescription ?? ""
-                                });
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button className="danger-button" type="button" onClick={() => void handleDeleteCamera(item.id)}>
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                </div>
-              </>
-            ) : (
-              <p className="empty-state">Create a premises or select one from the list to manage its agents and cameras.</p>
-            )}
-          </article>
-        </section>
-      </main>
+              ) : null}
+            </section>
+          </section>
+        </main>
+      )}
     </div>
   );
 }

@@ -43,6 +43,14 @@ export async function registerAgentRoutes(app: FastifyInstance, options: AgentRo
     return { agent };
   });
 
+  app.get("/agents/:agentId/runtime-config", async (request) => {
+    const tenantId = requireTenantContext(request);
+    const { agentId } = request.params as { agentId: string };
+    const runtimeConfig = await agentsService.getRuntimeConfig(tenantId, agentId);
+
+    return { runtimeConfig };
+  });
+
   app.patch("/agents/:agentId", async (request) => {
     requireTenantContext(request);
     requireUserContext(request);

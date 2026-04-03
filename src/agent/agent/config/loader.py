@@ -45,9 +45,8 @@ def load_settings(config_path: Path | str) -> Settings:
     except ValidationError:
         raise
     settings.queue.path = (path.parent / settings.queue.path).resolve() if not settings.queue.path.is_absolute() else settings.queue.path
-    if settings.camera.source_stream_id:
+    if settings.camera and settings.camera.source_stream_id:
         settings.source_stream_id = settings.camera.source_stream_id
     if settings.buffer.retention_seconds < settings.motion.pre_trigger_seconds:
         settings.buffer.retention_seconds = settings.motion.pre_trigger_seconds
     return settings
-
